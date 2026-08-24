@@ -175,3 +175,41 @@ async def test_consecutive_partial_cycles_tracks_persistent_partial_additive():
     )
     assert decision.reason != "partial-additive"
     assert metrics.consecutive_partial_cycles == 0
+
+
+class RaisingK8s(FakeK8s):
+    """patch() always raises, as it would against a target object that was
+    never created (see README section 8)."""
+
+    async def patch(self, ref, body):
+        raise RuntimeError("patch failed: object not found")
+
+
+async def test_no_sources_cycle_does_not_advance_last_success():
+    # A refusal is precisely what this metric exists to surface -- it must
+    # not be masked by a fresh-looking last_success.
+    k8s, metrics = FakeK8s(obj={"spec": {"externalCIDRs": [A, B]}}), Metrics()
+    decision = await reconcile(
+        sources=[SourceResult("ingest:1", set(), 0, False)],
+        feeders=FeederSet(), emitter=CCGEmitter(), k8s=k8s,
+        metrics=metrics, now=1000.0,
+    )
+    assert decision.reason == "no-sources"
+    assert metrics.last_success is None
+
+
+async def test_a_raising_patch_does_not_advance_last_success():
+    # The 404 case: the target object was never created, so k8s.patch raises
+    # on every cycle. last_success must not be stamped on the way past a
+    # write that then fails -- otherwise a persistently-broken write reads
+    # as healthy.
+    k8s, metrics = RaisingK8s(obj={"spec": {"externalCIDRs": []}}), Metrics()
+    try:
+        await reconcile(
+            sources=[SourceResult("ingest:1", {A, B}, 0, True)],
+            feeders=FeederSet(), emitter=CCGEmitter(), k8s=k8s,
+            metrics=metrics, now=1000.0,
+        )
+    except RuntimeError:
+        pass
+    assert metrics.last_success is None
