@@ -128,3 +128,32 @@ the `CiliumCIDRGroup` ships empty in the manifests, and the controller only
 ever patches an object that already exists. If the RBAC ever needs to grow
 past "get and patch one named object of one kind," that should be treated as
 a design change worth its own review, not a routine permissions bump.
+
+## 8. Install notes
+
+The `CiliumCIDRGroup` (`adsblol-feeders`) is cluster-scoped, so it is kept
+out of the kustomize tree Flux syncs — see
+`infra/manifests/default/reapi-allowlist/cluster-scoped/adsblol-feeders.yaml`.
+Before the controller's Deployment starts, create it once by hand:
+
+```
+kubectl apply -f infra/manifests/default/reapi-allowlist/cluster-scoped/adsblol-feeders.yaml
+```
+
+This is not a workaround for a missing feature: the controller only ever
+`patch`es this object, it never `create`s it, and that is precisely what
+keeps its RBAC down to `get`+`patch` on one named object (section 7). The
+one-time manual `apply` and the minimal RBAC are the same design decision
+seen from two sides — the controller doesn't need `create` permission
+because someone (or the initial rollout process) creates the empty object
+first, once.
+
+If the object doesn't exist yet when the controller starts: the `get` itself
+does not fail (a missing object is treated as an empty starting set), but the
+`patch` at the end of the reconcile does — patching a nonexistent object
+errors, is caught by the top-level handler, and is logged as `reconcile
+failed` once per `--interval`. `adsb_reapi_allowlist_seconds_since_success`
+stays at its initial `-1` ("never succeeded") rather than counting up from a
+real timestamp, so alerting on that metric exceeding a threshold won't catch
+this particular case — watch the logs, or alert on the value being `-1`
+past startup, until the group is created.
