@@ -46,14 +46,42 @@ async def test_all_sources_failing_does_not_patch():
 
 async def test_existing_object_seeds_the_decay_set():
     # B is in the cluster object but absent from this poll; it must survive.
+    # seed_existing=True models the startup-recovery cycle only.
     k8s, metrics = FakeK8s(obj={"spec": {"externalCIDRs": [A, B]}}), Metrics()
     feeders = FeederSet(window_seconds=3600)
     await reconcile(
         sources=[SourceResult("ingest:1", {A}, 0, True)],
         feeders=feeders, emitter=CCGEmitter(), k8s=k8s,
-        metrics=metrics, now=1000.0,
+        metrics=metrics, now=1000.0, seed_existing=True,
     )
     assert feeders.active(now=1000.0) == {A, B}
+
+
+async def test_decay_evicts_a_feeder_that_stops_reporting_across_cycles():
+    # Regression: re-seeding from the persisted object on every cycle would
+    # re-stamp B as just-seen forever, making decay and the shrink-guard
+    # unreachable -- the set could then only ever grow. Two full decay
+    # windows pass between cycles with only A still feeding; B must go.
+    # 2 -> 1 prefixes stays clear of the shrink-guard (1 < 2*0.5 is false).
+    k8s, metrics = FakeK8s(obj={"spec": {"externalCIDRs": []}}), Metrics()
+    feeders = FeederSet(window_seconds=3600)
+
+    await reconcile(
+        sources=[SourceResult("ingest:1", {A, B}, 0, True)],
+        feeders=feeders, emitter=CCGEmitter(), k8s=k8s,
+        metrics=metrics, now=1000.0, seed_existing=True,
+    )
+    k8s.obj = {"spec": {"externalCIDRs": sorted({A, B})}}
+
+    decision = await reconcile(
+        sources=[SourceResult("ingest:1", {A}, 0, True)],
+        feeders=feeders, emitter=CCGEmitter(), k8s=k8s,
+        metrics=metrics, now=1000.0 + 7200, seed_existing=False,
+    )
+
+    assert decision.write is True
+    assert B not in k8s.patched[-1]["spec"]["externalCIDRs"]
+    assert k8s.patched[-1]["spec"]["externalCIDRs"] == [A]
 
 
 async def test_unchanged_set_does_not_patch():

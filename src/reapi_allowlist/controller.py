@@ -19,6 +19,7 @@ async def reconcile(
     k8s: K8sClient,
     metrics: Metrics,
     now: float,
+    seed_existing: bool = False,
 ) -> WriteDecision:
     """Fold one poll into the cluster object. Returns what was decided and why.
 
@@ -27,8 +28,11 @@ async def reconcile(
     existing = emitter.extract(await k8s.get(emitter.ref) or {})
     current = frozenset(existing)
 
-    # Seed from the cluster object so a restart never empties the set.
-    feeders.seed(existing, now)
+    # Startup recovery only. Re-seeding every cycle would re-stamp every
+    # persisted prefix as just-seen, which makes decay and the shrink-guard
+    # unreachable -- the set could then only ever grow.
+    if seed_existing:
+        feeders.seed(existing, now)
 
     observed: set[str] = set()
     anomalies = source_errors = 0

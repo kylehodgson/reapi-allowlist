@@ -72,6 +72,7 @@ async def main() -> None:
 
     async with client.ApiClient() as api_client, aiohttp.ClientSession() as session:
         k8s = K8sClient(client.CustomObjectsApi(api_client))
+        seed_existing = True
         while True:
             try:
                 sources = await gather_sources(
@@ -80,7 +81,9 @@ async def main() -> None:
                     mlat_hosts=args.mlat_host, mlat_port=args.mlat_port,
                 )
                 await reconcile(sources=sources, feeders=feeders, emitter=emitter,
-                                k8s=k8s, metrics=metrics, now=time.time())
+                                k8s=k8s, metrics=metrics, now=time.time(),
+                                seed_existing=seed_existing)
+                seed_existing = False
             except Exception:
                 logging.exception("reconcile failed")
             await asyncio.sleep(args.interval)
