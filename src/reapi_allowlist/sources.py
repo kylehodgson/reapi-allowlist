@@ -6,6 +6,7 @@ evict its feeders. Exceptions must not escape this module.
 """
 
 import asyncio
+import ipaddress
 import logging
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -28,7 +29,25 @@ class SourceResult:
     ok: bool = False
 
 
+def _bracket_if_ipv6(host: str) -> str:
+    """Bracket a bare IPv6 literal so it can be embedded in a URL authority.
+
+    Leaves IPv4 addresses, hostnames, and already-bracketed literals alone.
+    A colon alone isn't sufficient evidence (e.g. test doubles pass
+    "127.0.0.1:8080" as a single "host" string), so this only brackets
+    strings that actually parse as an IPv6 address.
+    """
+    if host.startswith("["):
+        return host
+    try:
+        ipaddress.IPv6Address(host)
+    except ValueError:
+        return host
+    return f"[{host}]"
+
+
 def _url(host: str, port: int | None) -> str:
+    host = _bracket_if_ipv6(host)
     return f"http://{host}:{port}/clients.json" if port else f"http://{host}/clients.json"
 
 
@@ -80,6 +99,13 @@ async def gather_sources(
     timeout: float = 5.0,
 ) -> list[SourceResult]:
     ingest_hosts = await resolve_hosts(resolver, ingest_dns)
+    extra: list[SourceResult] = []
+    if not ingest_hosts:
+        # A name that fails to resolve must count as a failed source, not as
+        # no source at all -- otherwise all_sources_ok stays True and the
+        # additive-only rail never engages.
+        log.warning("no addresses for %s", ingest_dns)
+        extra.append(SourceResult(name=f"ingest-dns:{ingest_dns}"))
     named = [
         (f"ingest:{h}", fetch_source(session, f"ingest:{h}", _url(h, ingest_port),
                                       parse_readsb_clients, timeout))
@@ -100,4 +126,4 @@ async def gather_sources(
             results.append(SourceResult(name=name))
         else:
             results.append(value)
-    return results
+    return extra + results
