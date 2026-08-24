@@ -1,5 +1,23 @@
 # reapi-allowlist
 
+> ## ⚠ Image prerequisite — read before applying the manifests
+>
+> **`ghcr.io/kylehodgson/reapi-allowlist:latest` does not exist yet.** It has
+> never been built or pushed anywhere. The Kubernetes manifests in
+> `infra/manifests/default/reapi-allowlist` reference that image path as a
+> placeholder, and applying them (or merging them into the branch Flux syncs)
+> **before the image exists produces a crash-looping `ImagePullBackOff` pod in
+> production.**
+>
+> Before applying those manifests, either:
+> - build and push the image yourself under `ghcr.io/adsblol/...` and update
+>   the Deployment's `image:` field to match, or
+> - pull `ghcr.io/kylehodgson/reapi-allowlist` once it has actually been
+>   published.
+>
+> Until one of those is true, do not apply the manifests — the Deployment will
+> not come up.
+
 ## 1. What this does
 
 `reapi-allowlist` maintains the set of currently-connected ADSB.lol feeder IP
