@@ -62,3 +62,14 @@ def test_growing_from_empty_is_allowed():
     d = decide(frozenset(), frozenset({A, B}),
                all_sources_ok=True, any_source_ok=True)
     assert (d.write, d.reason) == (True, "ok")
+
+
+def test_refuses_when_the_additive_union_exceeds_the_cap():
+    # Neither set alone is over the cap, but the union that would be
+    # written when a source is unreachable is.
+    current = frozenset(f"10.0.0.{i}/32" for i in range(6))
+    proposed = frozenset(f"10.0.1.{i}/32" for i in range(6))
+    d = decide(current, proposed,
+               all_sources_ok=False, any_source_ok=True, max_entries=10)
+    assert (d.write, d.reason) == (False, "over-cap")
+    assert d.prefixes == current

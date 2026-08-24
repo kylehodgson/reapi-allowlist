@@ -43,6 +43,12 @@ def decide(
         # A source being unreachable is not evidence a feeder left.
         result, reason = current | proposed, "partial-additive"
 
+    # Cap check on the actual write: the first check (line 37-38) bounds
+    # what sources proposed; this bounds what would actually be written.
+    # With all_sources_ok=False, result can exceed proposed via the union.
+    if len(result) > max_entries:
+        return WriteDecision(False, "over-cap", current)
+
     if result == current:
         return WriteDecision(False, "unchanged", current)
 
