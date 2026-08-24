@@ -122,3 +122,30 @@ async def test_gather_sources_isolates_a_source_whose_parser_raises(
     assert len(bad_results) == 1
     assert good_results[0].prefixes == {"203.0.113.7/32"}
     assert bad_results[0].prefixes == set()
+
+
+async def test_gather_sources_converts_an_escaped_exception_into_a_failed_source(
+    monkeypatch,
+):
+    # Nothing should be able to raise out of fetch_source -- but if a future
+    # change ever lets one through, gather_sources must still return one
+    # SourceResult per source instead of aborting the whole cycle.
+    async def exploding_fetch(session, name, url, parser, timeout=5.0):
+        raise RuntimeError("boom")
+
+    async def fake_resolve(resolver, dns_name):
+        return ["ingest-a", "ingest-b"]
+
+    monkeypatch.setattr("reapi_allowlist.sources.fetch_source", exploding_fetch)
+    monkeypatch.setattr("reapi_allowlist.sources.resolve_hosts", fake_resolve)
+
+    results = await gather_sources(
+        None, resolver=None,
+        ingest_dns="ingest-readsb-headless", ingest_port=150,
+        mlat_hosts=["mlat-a"], mlat_port=150,
+    )
+
+    assert len(results) == 3
+    assert all(r.ok is False for r in results)
+    assert all(r.prefixes == set() for r in results)
+    assert [r.name for r in results] == ["ingest:ingest-a", "ingest:ingest-b", "mlat:mlat-a"]
