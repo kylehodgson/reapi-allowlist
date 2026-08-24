@@ -73,3 +73,15 @@ async def test_patch_sends_the_body_to_the_cluster_scoped_call():
     assert kind == "patch_cluster"
     assert kw["body"] == body
     assert kw["name"] == "adsblol-feeders"
+    assert kw["_content_type"] == "application/merge-patch+json"
+
+
+async def test_patch_sends_the_body_to_the_namespaced_call():
+    api = FakeApi()
+    body = {"spec": {"service": {"loadBalancerSourceRanges": ["1.0.0.1/32"]}}}
+    await K8sClient(api).patch(NS_REF, body)
+    kind, kw = api.calls[0]
+    assert kind == "patch_ns"
+    assert kw["body"] == body
+    assert kw["namespace"] == "adsblol"
+    assert kw["_content_type"] == "application/merge-patch+json"

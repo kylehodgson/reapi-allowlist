@@ -56,9 +56,11 @@ class K8sClient:
             await self._api.patch_cluster_custom_object(
                 group=group, version=version, plural=ref.plural,
                 name=ref.name, body=body,
+                _content_type="application/merge-patch+json",
             )
         else:
             await self._api.patch_namespaced_custom_object(
                 group=group, version=version, namespace=ref.namespace,
                 plural=ref.plural, name=ref.name, body=body,
+                _content_type="application/merge-patch+json",
             )
