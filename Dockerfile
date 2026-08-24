@@ -7,6 +7,6 @@ RUN pip install --no-cache-dir --target=/deps .
 FROM python:3.12-slim
 RUN useradd --uid 1000 --create-home app
 COPY --from=build /deps /deps
-ENV PYTHONPATH=/deps PYTHONUNBUFFERED=1
+ENV PYTHONPATH=/deps PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1
 USER 1000
 ENTRYPOINT ["python", "-m", "reapi_allowlist"]
