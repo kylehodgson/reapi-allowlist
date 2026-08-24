@@ -46,11 +46,14 @@ async def fetch_source(
                 log.warning("%s: HTTP %s", name, response.status)
                 return SourceResult(name=name)
             payload = orjson.loads(await response.read())
+        # Parsing runs inside the same guarded block: a syntactically valid
+        # but structurally wrong body (e.g. "[]" or "42") must degrade the
+        # same way a connection failure does, not raise past this function.
+        parsed = parser(payload)
     except Exception as exc:  # noqa: BLE001 - never let a source failure escape
         log.warning("%s: %s", name, exc)
         return SourceResult(name=name)
 
-    parsed = parser(payload)
     return SourceResult(
         name=name, prefixes=parsed.prefixes, anomalies=parsed.anomalies, ok=True
     )
@@ -77,13 +80,24 @@ async def gather_sources(
     timeout: float = 5.0,
 ) -> list[SourceResult]:
     ingest_hosts = await resolve_hosts(resolver, ingest_dns)
-    tasks = [
-        fetch_source(session, f"ingest:{h}", _url(h, ingest_port),
-                     parse_readsb_clients, timeout)
+    named = [
+        (f"ingest:{h}", fetch_source(session, f"ingest:{h}", _url(h, ingest_port),
+                                      parse_readsb_clients, timeout))
         for h in ingest_hosts
     ] + [
-        fetch_source(session, f"mlat:{h}", _url(h, mlat_port),
-                     parse_mlat_clients, timeout)
+        (f"mlat:{h}", fetch_source(session, f"mlat:{h}", _url(h, mlat_port),
+                                    parse_mlat_clients, timeout))
         for h in mlat_hosts
     ]
-    return list(await asyncio.gather(*tasks))
+    # Belt-and-braces: fetch_source already never raises, but return_exceptions
+    # keeps this module's "exceptions never escape" contract true even if that
+    # ever regresses, so one bad source can't take its siblings down with it.
+    raw = await asyncio.gather(*(coro for _, coro in named), return_exceptions=True)
+    results: list[SourceResult] = []
+    for (name, _), value in zip(named, raw):
+        if isinstance(value, BaseException):
+            log.warning("%s: unexpected error: %s", name, value)
+            results.append(SourceResult(name=name))
+        else:
+            results.append(value)
+    return results
