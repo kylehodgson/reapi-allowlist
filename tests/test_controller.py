@@ -107,3 +107,71 @@ async def test_anomalies_and_source_errors_are_recorded():
     )
     assert metrics.anomalies == 3
     assert metrics.source_errors == 1
+
+
+async def test_unchanged_reconcile_still_advances_last_success():
+    # A fully healthy reconcile that correctly decides nothing changed is
+    # still healthy -- it must not leave last_success stuck at None forever,
+    # which would make adsb_reapi_allowlist_seconds_since_success rise
+    # indefinitely on a perfectly stable, working controller.
+    k8s, metrics = FakeK8s(obj={"spec": {"externalCIDRs": [A]}}), Metrics()
+    decision = await reconcile(
+        sources=[SourceResult("ingest:1", {A}, 0, True)],
+        feeders=FeederSet(), emitter=CCGEmitter(), k8s=k8s,
+        metrics=metrics, now=1000.0,
+    )
+    assert decision.reason == "unchanged"
+    assert metrics.last_success == 1000.0
+
+
+async def test_unchanged_increments_no_change_not_refusals():
+    # "unchanged" is the healthy steady state, not a refusal -- it must not
+    # pollute the refusals metric, which is meant to be alertable.
+    k8s, metrics = FakeK8s(obj={"spec": {"externalCIDRs": [A]}}), Metrics()
+    await reconcile(
+        sources=[SourceResult("ingest:1", {A}, 0, True)],
+        feeders=FeederSet(), emitter=CCGEmitter(), k8s=k8s,
+        metrics=metrics, now=1000.0,
+    )
+    assert metrics.no_change == 1
+    assert metrics.refusals == {}
+
+
+async def test_consecutive_partial_cycles_tracks_persistent_partial_additive():
+    # One source failing while the proposed set differs from current yields
+    # write=True, reason="partial-additive". This must accumulate across
+    # cycles so an operator can tell "one partial cycle" from "partial for
+    # six hours", and reset the moment a cycle is not partial-additive.
+    k8s, metrics = FakeK8s(obj={"spec": {"externalCIDRs": []}}), Metrics()
+    feeders = FeederSet(window_seconds=3600)
+
+    sources = [
+        SourceResult("ingest:1", {A}, 0, True),
+        SourceResult("ingest:2", set(), 0, False),
+    ]
+
+    decision = await reconcile(
+        sources=sources, feeders=feeders, emitter=CCGEmitter(), k8s=k8s,
+        metrics=metrics, now=1000.0,
+    )
+    assert decision.reason == "partial-additive"
+    assert metrics.consecutive_partial_cycles == 1
+
+    sources_more = [
+        SourceResult("ingest:1", {A, B}, 0, True),
+        SourceResult("ingest:2", set(), 0, False),
+    ]
+    decision = await reconcile(
+        sources=sources_more, feeders=feeders, emitter=CCGEmitter(), k8s=k8s,
+        metrics=metrics, now=1010.0,
+    )
+    assert decision.reason == "partial-additive"
+    assert metrics.consecutive_partial_cycles == 2
+
+    healthy_sources = [SourceResult("ingest:1", {A, B}, 0, True)]
+    decision = await reconcile(
+        sources=healthy_sources, feeders=feeders, emitter=CCGEmitter(), k8s=k8s,
+        metrics=metrics, now=1020.0,
+    )
+    assert decision.reason != "partial-additive"
+    assert metrics.consecutive_partial_cycles == 0

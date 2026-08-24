@@ -12,6 +12,8 @@ class Metrics:
     source_errors: int = 0
     last_success: float | None = None
     refusals: dict[str, int] = field(default_factory=dict)
+    no_change: int = 0
+    consecutive_partial_cycles: int = 0
 
     def render(self, now: float) -> str:
         since = -1 if self.last_success is None else int(now - self.last_success)
@@ -22,6 +24,8 @@ class Metrics:
             f"adsb_reapi_allowlist_parse_anomalies {self.anomalies}",
             f"adsb_reapi_allowlist_source_errors {self.source_errors}",
             f"adsb_reapi_allowlist_seconds_since_success {since}",
+            f"adsb_reapi_allowlist_no_change {self.no_change}",
+            f"adsb_reapi_allowlist_consecutive_partial_cycles {self.consecutive_partial_cycles}",
         ]
         lines += [
             f'adsb_reapi_allowlist_refusals{{reason="{reason}"}} {count}'

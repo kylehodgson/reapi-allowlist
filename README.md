@@ -116,8 +116,10 @@ default `9090`). Every series comes from `Metrics.render`:
 | `adsb_reapi_allowlist_removes` | Prefixes removed in the most recent reconcile. |
 | `adsb_reapi_allowlist_parse_anomalies` | Count of client entries that didn't parse as expected. Non-zero here means PROXY protocol is not active on that path — the parser saw the no-PROXY fallback shape instead of a real source address. |
 | `adsb_reapi_allowlist_source_errors` | Fetch errors against readsb or mlat-server sources. |
-| `adsb_reapi_allowlist_seconds_since_success` | Seconds since the last fully-successful reconcile (`-1` if none has ever succeeded). **This is the series worth alerting on** — a rising value means the controller is stuck or every source is unreachable. |
-| `adsb_reapi_allowlist_refusals{reason="..."}` | One counter per distinct reason a write was refused by a safety rail (e.g. the >50% shrink guard, the hard-cap guard). |
+| `adsb_reapi_allowlist_seconds_since_success` | Seconds since the last reconcile that reached a decision at all (`-1` if none ever has). This advances on every completed cycle — a write, a no-op "unchanged" cycle, and a refused write (e.g. `no-sources`, `shrink-guard`) all count, since decide() returning at all means the loop is alive. **This is the series worth alerting on for "the controller is stuck"** — a genuinely hung or crashed reconcile loop is the one thing that stops it advancing. It does *not* by itself flag "every source is unreachable" (that decision still completes); watch `adsb_reapi_allowlist_source_errors` and `refusals{reason="no-sources"}` for that. |
+| `adsb_reapi_allowlist_no_change` | Count of reconciles where the computed set exactly matched what's already live — the healthy, do-nothing steady state. Not a refusal; kept out of the `refusals` series so that series stays alertable. |
+| `adsb_reapi_allowlist_refusals{reason="..."}` | One counter per distinct reason a write was refused by a safety rail (e.g. the >50% shrink guard, the hard-cap guard, `no-sources`). **This is the other series worth alerting on** — every reason it tracks is an anomaly; `unchanged` is deliberately excluded (see `no_change` above) so the healthy steady state can't drown out real refusals. |
+| `adsb_reapi_allowlist_consecutive_partial_cycles` | Number of reconciles in a row that landed on `partial-additive` (one or more sources down, so the set could only grow). Resets to 0 the moment a cycle is anything else. Distinguishes "one transient blip" from "we've been additive-only for hours," which nothing else surfaces — the underlying `guards.decide` behaviour is unchanged and intentionally stays additive-only for as long as a source is down. |
 
 ## 7. RBAC
 
@@ -152,8 +154,13 @@ If the object doesn't exist yet when the controller starts: the `get` itself
 does not fail (a missing object is treated as an empty starting set), but the
 `patch` at the end of the reconcile does — patching a nonexistent object
 errors, is caught by the top-level handler, and is logged as `reconcile
-failed` once per `--interval`. `adsb_reapi_allowlist_seconds_since_success`
-stays at its initial `-1` ("never succeeded") rather than counting up from a
-real timestamp, so alerting on that metric exceeding a threshold won't catch
-this particular case — watch the logs, or alert on the value being `-1`
-past startup, until the group is created.
+failed` once per `--interval`. Note that `adsb_reapi_allowlist_seconds_since_success`
+is stamped as soon as a decision is reached, *before* that patch is
+attempted, so this particular failure mode does **not** show up as a rising
+`seconds_since_success` — the metric only reflects the reconcile loop being
+alive, not the write actually landing. Watch the logs for `reconcile failed`,
+or confirm the group exists, until it's created.
+
+## 9. Licence
+
+BSD-3-Clause. See [`LICENSE`](./LICENSE).

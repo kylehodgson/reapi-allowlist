@@ -56,16 +56,30 @@ async def reconcile(
     metrics.source_errors = source_errors
     metrics.set_size = len(decision.prefixes)
 
+    # A completed decision -- whatever it decided -- is a successful reconcile
+    # cycle. This must land after decide() returns so a cycle that throws
+    # before reaching a decision does not count as a success, but it must NOT
+    # be conditioned on decision.write: a healthy cycle that correctly finds
+    # nothing to change is still healthy, and seconds_since_success must not
+    # rise just because the set happened to be stable.
+    metrics.last_success = now
+
+    if decision.reason == "partial-additive":
+        metrics.consecutive_partial_cycles += 1
+    else:
+        metrics.consecutive_partial_cycles = 0
+
     if not decision.write:
-        if decision.reason != "unchanged":
+        if decision.reason == "unchanged":
+            metrics.no_change += 1
+        else:
             log.warning("refusing write: %s", decision.reason)
-        metrics.refusals[decision.reason] = metrics.refusals.get(decision.reason, 0) + 1
+            metrics.refusals[decision.reason] = metrics.refusals.get(decision.reason, 0) + 1
         return decision
 
     metrics.adds = len(decision.prefixes - current)
     metrics.removes = len(current - decision.prefixes)
     await k8s.patch(emitter.ref, emitter.render(decision.prefixes))
-    metrics.last_success = now
     log.info("wrote %d prefixes (+%d/-%d, %s)",
              len(decision.prefixes), metrics.adds, metrics.removes, decision.reason)
     return decision
