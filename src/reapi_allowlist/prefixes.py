@@ -17,4 +17,12 @@ def to_prefix(value: str) -> str | None:
         addr = ipaddress.ip_address(value.strip())
     except ValueError:
         return None
+
+    # A dual-stack listener reports IPv4 peers as ::ffff:a.b.c.d, and haproxy
+    # passes that straight through in the PROXY header ("TCP6 ::ffff:1.2.3.4").
+    # Emitting it as a /128 yields an entry that cannot match the feeder's
+    # actual IPv4 traffic, so a live feeder would be denied. Unwrap it.
+    if isinstance(addr, ipaddress.IPv6Address) and addr.ipv4_mapped:
+        addr = addr.ipv4_mapped
+
     return f"{addr.compressed}{_SUFFIX[addr.version]}"
