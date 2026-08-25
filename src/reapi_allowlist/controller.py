@@ -56,7 +56,12 @@ async def reconcile(
     metrics.source_errors = source_errors
     metrics.set_size = len(decision.prefixes)
 
-    if decision.reason == "partial-additive":
+    # Keyed off source health, NOT decision.reason. When the additive union
+    # equals the current set, decide() returns "unchanged" before ever
+    # reporting "partial-additive" -- so a reason-driven counter reads zero
+    # during exactly the sustained degradation it exists to surface. Observed
+    # live with ingest scaled to zero: source_errors=1, counter stuck at 0.
+    if source_errors:
         metrics.consecutive_partial_cycles += 1
     else:
         metrics.consecutive_partial_cycles = 0

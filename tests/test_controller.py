@@ -213,3 +213,35 @@ async def test_a_raising_patch_does_not_advance_last_success():
     except RuntimeError:
         pass
     assert metrics.last_success is None
+
+
+async def test_partial_cycles_count_degraded_cycles_even_when_nothing_changes():
+    # Observed live: with one source failing but the union equal to the current
+    # set, decide() returns "unchanged" -- so a counter driven off the decision
+    # reason resets, and reads 0 during exactly the sustained degradation it
+    # exists to surface. It must key off source health, not the write outcome.
+    k8s, metrics = FakeK8s(obj={"spec": {"externalCIDRs": [A]}}), Metrics()
+    feeders = FeederSet(window_seconds=3600)
+    for cycle in range(3):
+        decision = await reconcile(
+            sources=[SourceResult("ok-src", {A}, 0, True),
+                     SourceResult("dead-src", set(), 0, False)],
+            feeders=feeders, emitter=CCGEmitter(), k8s=k8s,
+            metrics=metrics, now=1000.0 + cycle, seed_existing=(cycle == 0),
+        )
+        assert decision.reason == "unchanged"
+    assert metrics.consecutive_partial_cycles == 3
+
+
+async def test_partial_cycles_reset_once_every_source_is_healthy_again():
+    k8s, metrics = FakeK8s(obj={"spec": {"externalCIDRs": [A]}}), Metrics()
+    feeders = FeederSet(window_seconds=3600)
+    await reconcile(sources=[SourceResult("dead", set(), 0, False),
+                             SourceResult("ok", {A}, 0, True)],
+                    feeders=feeders, emitter=CCGEmitter(), k8s=k8s,
+                    metrics=metrics, now=1000.0, seed_existing=True)
+    assert metrics.consecutive_partial_cycles == 1
+    await reconcile(sources=[SourceResult("ok", {A}, 0, True)],
+                    feeders=feeders, emitter=CCGEmitter(), k8s=k8s,
+                    metrics=metrics, now=1001.0)
+    assert metrics.consecutive_partial_cycles == 0
