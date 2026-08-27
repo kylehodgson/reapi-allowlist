@@ -1,0 +1,11 @@
+# Keep the build context to what the image actually needs. Without this the
+# context carries the venv, test suite, git history and local bytecode.
+.git
+.venv
+tests
+docs
+__pycache__
+*.pyc
+*.egg-info
+.pytest_cache
+.ruff_cache

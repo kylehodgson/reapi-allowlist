@@ -1,23 +1,14 @@
 # reapi-allowlist
 
-> ## ⚠ Image prerequisite — read before applying the manifests
->
-> **`ghcr.io/kylehodgson/reapi-allowlist:latest` does not exist yet.** It has
-> never been built or pushed anywhere. The Kubernetes manifests in
-> `infra/manifests/default/reapi-allowlist` reference that image path as a
-> placeholder, and applying them (or merging them into the branch Flux syncs)
-> **before the image exists produces a crash-looping `ImagePullBackOff` pod in
-> production.**
->
-> Before applying those manifests, either:
-> - build and push the image yourself under `ghcr.io/adsblol/...` and update
->   the Deployment's `image:` field to match, or
-> - pull `ghcr.io/kylehodgson/reapi-allowlist` once it has actually been
->   published.
->
-> Until one of those is true, do not apply the manifests — the Deployment will
-> not come up.
+**Status:** the controller is complete and tested (79 tests). Enforcement is
+proven on a lab k3s cluster fed by a real Raspberry Pi, not on ADSB.lol's
+production cluster — we have no access to it. Treat this as a reference
+implementation to read, adapt, or ignore.
 
+A prebuilt image is published at `ghcr.io/kylehodgson/reapi-allowlist:v0.1.0`
+(amd64 + arm64) for convenience. Building your own from this source and pushing
+it somewhere you control is equally reasonable — update the Deployment's
+`image:` field to match.
 ## 1. What this does
 
 `reapi-allowlist` maintains the set of currently-connected ADSB.lol feeder IP
@@ -25,11 +16,11 @@ addresses as a Cilium object, so that a later enforcement layer can restrict
 `re-api.adsb.lol` to people who actually feed data instead of leaving it open
 to the internet. **This controller enforces nothing on its own.** It reads
 `clients.json` from readsb and mlat-server, reconciles a set of addresses, and
-writes that set to one Kubernetes object. Nothing in this repository or in
-the manifests it ships consumes that object yet — no `CiliumClusterwideNetworkPolicy`,
-no Gateway, no traffic is affected by running this controller. It is a
-data-plane-adjacent, control-plane-only change: Phase 0 of a staged rollout,
-observe-only by construction.
+writes that set to one Kubernetes object. Enforcement is a separate, deliberate
+step: the accompanying manifests put a Gateway behind that object, and until
+those are applied nothing this controller writes affects any traffic. Running it
+observe-only first — watching the metrics for a few cycles before anything reads
+the object it maintains — is the intended way to adopt it.
 
 The address set is sourced by resolving the `ingest-readsb-headless` service
 to its pod IPs and fetching `:150/clients.json` from each (readsb), and by
@@ -52,7 +43,7 @@ a connection closes.
 
 | Flag | Default | Meaning |
 |---|---|---|
-| `--emit` | `ccg` | Which object to write: `ccg` (`CiliumCIDRGroup`) or `cgcc` (`CiliumGatewayClassConfig`). |
+| `--emit` | `ccg` | Which object to write: `ccg` (`CiliumCIDRGroup`) or `cgcc` (`CiliumGatewayClassConfig`). The default is historical — `cgcc` is the recommended mode, see section 8. |
 | `--name` | `adsblol-feeders` | Name of the object to patch. |
 | `--namespace` | `adsblol` | Namespace of the object to patch (used by the `cgcc` emitter; `CiliumCIDRGroup` is cluster-scoped). |
 | `--interval` | `60` | Seconds between reconcile loops. |
@@ -124,42 +115,60 @@ default `9090`). Every series comes from `Metrics.render`:
 
 ## 7. RBAC
 
-The `ClusterRole` grants `get` and `patch` on exactly one named
-`CiliumCIDRGroup` (`adsblol-feeders`) — no `create`, no `list`, no `watch`,
-and no access to any other object. This is the ceiling, not a starting point:
-the `CiliumCIDRGroup` ships empty in the manifests, and the controller only
-ever patches an object that already exists. If the RBAC ever needs to grow
-past "get and patch one named object of one kind," that should be treated as
-a design change worth its own review, not a routine permissions bump.
+A namespaced `Role` grants `get` and `patch` on exactly one named
+`CiliumGatewayClassConfig` (`reapi-config`) — no `create`, no `list`, no
+`watch`, no `delete`, and no access to any other object in any other namespace.
+
+This is the ceiling, not a starting point. The controller only ever patches an
+object that already exists, which is what keeps `create` off the list. If the
+RBAC ever needs to grow past "get and patch one named object of one kind," treat
+that as a design change worth its own review, not a routine permissions bump.
+
+The `ccg` emitter needs a `ClusterRole` instead, because `CiliumCIDRGroup` is
+cluster-scoped. That is one of several reasons `cgcc` is the recommended mode —
+see section 8.
 
 ## 8. Install notes
 
-The `CiliumCIDRGroup` (`adsblol-feeders`) is cluster-scoped, so it is kept
-out of the kustomize tree Flux syncs — see
-`infra/manifests/default/reapi-allowlist/cluster-scoped/adsblol-feeders.yaml`.
-Before the controller's Deployment starts, create it once by hand:
+### Which emitter to use
+
+`cgcc` is the recommended mode, and the one the shipped manifests use.
+
+`ccg` writes a `CiliumCIDRGroup` for a `CiliumClusterwideNetworkPolicy` to
+reference. That works, and it denies with a clean 403 where `cgcc` denies by
+dropping the packet (the client hangs) — a real advantage. But a CCNP has no
+destination match, and its `toPorts` matches *the port the client dialled*, not
+the listener port. Where every endpoint shares port 443, as on ADSB.lol, a
+policy scoped to one service necessarily covers all of them. That rules the
+mode out for this specific job, not in general.
+
+`cgcc` scopes per GatewayClass instead, so the target service gets its own class
+and nothing else is affected.
+
+### Applying it
+
+The `GatewayClass` is cluster-scoped, so it is kept out of the kustomize tree
+Flux syncs — kustomize's namespace transformer stamps a namespace onto
+cluster-scoped CRDs it does not recognise, which silently breaks them. Create it
+once by hand before the Gateway:
 
 ```
-kubectl apply -f infra/manifests/default/reapi-allowlist/cluster-scoped/adsblol-feeders.yaml
+kubectl apply -f manifests/default/reapi-gateway/cluster-scoped/gatewayclass.yaml
 ```
 
-This is not a workaround for a missing feature: the controller only ever
-`patch`es this object, it never `create`s it, and that is precisely what
-keeps its RBAC down to `get`+`patch` on one named object (section 7). The
-one-time manual `apply` and the minimal RBAC are the same design decision
-seen from two sides — the controller doesn't need `create` permission
-because someone (or the initial rollout process) creates the empty object
-first, once.
+Note that the `CiliumGatewayClassConfig` the controller writes deliberately does
+**not** declare `loadBalancerSourceRanges` in git. That field belongs to the
+controller; declaring it in the manifest would make Flux and the controller
+fight over ownership of it.
 
-If the object doesn't exist yet when the controller starts: the `get` itself
-does not fail (a missing object is treated as an empty starting set), but the
-`patch` at the end of the reconcile does — patching a nonexistent object
-errors, is caught by the top-level handler, and is logged as `reconcile
-failed` once per `--interval`. `adsb_reapi_allowlist_seconds_since_success`
-is only stamped *after* `k8s.patch` returns, so a persistently-missing
-target object correctly shows up as a rising `seconds_since_success` in
-addition to the `reconcile failed` log line — alerting on that metric
-exceeding a threshold does catch this case.
+If the target object doesn't exist when the controller starts: the `get` does
+not fail (a missing object is treated as an empty starting set), but the `patch`
+at the end of the reconcile does, is caught by the top-level handler, and is
+logged as `reconcile failed` once per `--interval`.
+`adsb_reapi_allowlist_seconds_since_success` is only stamped after a successful
+write, so a persistently-missing target shows up as a rising
+`seconds_since_success` as well as the log line — alerting on that metric does
+catch this case.
 
 ## 9. Licence
 
