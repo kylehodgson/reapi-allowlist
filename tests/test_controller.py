@@ -245,3 +245,24 @@ async def test_partial_cycles_reset_once_every_source_is_healthy_again():
                     feeders=feeders, emitter=CCGEmitter(), k8s=k8s,
                     metrics=metrics, now=1001.0)
     assert metrics.consecutive_partial_cycles == 0
+
+
+async def test_a_large_shrink_is_counted_and_still_written():
+    # The signal the shrink guard used to provide, without the deadlock: the
+    # write goes through, and an operator gets a loud, alertable counter.
+    current = [f"10.0.0.{i}/32" for i in range(10)]
+    k8s, metrics = FakeK8s(obj={"spec": {"externalCIDRs": current}}), Metrics()
+    await reconcile(sources=[SourceResult("s", {A}, 0, True)],
+                    feeders=FeederSet(window_seconds=3600), emitter=CCGEmitter(),
+                    k8s=k8s, metrics=metrics, now=1000.0)
+    assert k8s.patched[0]["spec"]["externalCIDRs"] == [A]
+    assert metrics.large_shrink == 1
+
+
+async def test_an_ordinary_change_does_not_count_as_a_large_shrink():
+    current = [A, B]
+    k8s, metrics = FakeK8s(obj={"spec": {"externalCIDRs": current}}), Metrics()
+    await reconcile(sources=[SourceResult("s", {A, B, "1.0.0.9/32"}, 0, True)],
+                    feeders=FeederSet(window_seconds=3600), emitter=CCGEmitter(),
+                    k8s=k8s, metrics=metrics, now=1000.0)
+    assert metrics.large_shrink == 0

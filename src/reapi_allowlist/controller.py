@@ -10,6 +10,14 @@ from .sources import SourceResult
 
 log = logging.getLogger(__name__)
 
+# A drop this steep is almost certainly a bug on our side rather than every
+# feeder leaving -- a clients.json format change, a bad --ingest-dns, a PROXY
+# version change. We still perform the write: the harm is up to one poll
+# interval without re-api access and it heals itself, whereas refusing
+# deadlocked until someone hand-patched the object. This counter is the signal
+# to alert on.
+LARGE_SHRINK_RATIO = 0.5
+
 
 async def reconcile(
     *,
@@ -29,7 +37,7 @@ async def reconcile(
     current = frozenset(existing)
 
     # Startup recovery only. Re-seeding every cycle would re-stamp every
-    # persisted prefix as just-seen, which makes decay and the shrink-guard
+    # persisted prefix as just-seen, which makes decay and eviction
     # unreachable -- the set could then only ever grow.
     if seed_existing:
         feeders.seed(existing, now)
@@ -70,7 +78,7 @@ async def reconcile(
         if decision.reason == "unchanged":
             # Correctly finding nothing to do is the controller doing its
             # job. last_success advances here, but deliberately not for
-            # no-sources/over-cap/shrink-guard below -- a refusal is exactly
+            # no-sources/over-cap below -- a refusal is exactly
             # what this metric exists to surface, so it must not advance.
             metrics.no_change += 1
             metrics.last_success = now
@@ -81,6 +89,11 @@ async def reconcile(
 
     metrics.adds = len(decision.prefixes - current)
     metrics.removes = len(current - decision.prefixes)
+    if current and len(decision.prefixes) < len(current) * LARGE_SHRINK_RATIO:
+        metrics.large_shrink += 1
+        log.warning("large shrink: %d -> %d prefixes -- check parse_anomalies "
+                    "and source_errors before assuming the feeders left",
+                    len(current), len(decision.prefixes))
     await k8s.patch(emitter.ref, emitter.render(decision.prefixes))
     # Set only after k8s.patch returns: if patch raises, this line is never
     # reached, so a persistently-failing write (e.g. the target object was

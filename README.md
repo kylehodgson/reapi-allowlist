@@ -100,7 +100,7 @@ removing an address on shaky evidence.
 |---|---|
 | Any source unreachable | Additive only — never remove on a partial fetch |
 | All sources unreachable | No write. Last known good persists |
-| New set < 50% of current | Refuse the write, log loudly, expose a metric |
+| New set < 50% of current | **Perform the write**, but log loudly and increment `large_shrink` |
 | Set exceeds hard cap (default 50,000) | Refuse, alarm |
 | Set unchanged | No write — do not touch etcd to say nothing |
 
@@ -114,11 +114,12 @@ default `9090`). Every series comes from `Metrics.render`:
 | `adsb_reapi_allowlist_size` | Current number of prefixes in the maintained set. |
 | `adsb_reapi_allowlist_adds` | Prefixes added in the most recent reconcile. |
 | `adsb_reapi_allowlist_removes` | Prefixes removed in the most recent reconcile. |
+| `adsb_reapi_allowlist_large_shrink` | Times the set dropped by more than half in a single cycle. The write still happens — this is a signal, not a rail. A steep drop is far more likely to be a bug on our side (a `clients.json` format change, a wrong `--ingest-dns`, a PROXY version change) than every feeder leaving at once, so **alert on it** — but check `parse_anomalies` and `source_errors` before assuming anything. Deliberately not a refusal: the harm of a wrong drop is up to one poll interval without re-api access and it heals itself, whereas refusing deadlocked permanently and needed a hand-patched object to clear. |
 | `adsb_reapi_allowlist_parse_anomalies` | Count of client entries that didn't parse as expected. Non-zero here means PROXY protocol is not active on that path — the parser saw the no-PROXY fallback shape instead of a real source address. |
 | `adsb_reapi_allowlist_source_errors` | Fetch errors against readsb or mlat-server sources. |
-| `adsb_reapi_allowlist_seconds_since_success` | Seconds since the controller last did its job (`-1` if it never has). "Did its job" means exactly two things: it wrote successfully, or it correctly found nothing to change (`unchanged`). It deliberately does **not** advance on a refused write (`no-sources`, `over-cap`, `shrink-guard`) or when `k8s.patch` itself fails — those are precisely the conditions this metric exists to surface. **This is the series worth alerting on** — a rising value means the controller is stuck, every source is unreachable, or writes are failing. |
+| `adsb_reapi_allowlist_seconds_since_success` | Seconds since the controller last did its job (`-1` if it never has). "Did its job" means exactly two things: it wrote successfully, or it correctly found nothing to change (`unchanged`). It deliberately does **not** advance on a refused write (`no-sources`, `over-cap`) or when `k8s.patch` itself fails — those are precisely the conditions this metric exists to surface. **This is the series worth alerting on** — a rising value means the controller is stuck, every source is unreachable, or writes are failing. |
 | `adsb_reapi_allowlist_no_change` | Count of reconciles where the computed set exactly matched what's already live — the healthy, do-nothing steady state. Not a refusal; kept out of the `refusals` series so that series stays alertable. |
-| `adsb_reapi_allowlist_refusals{reason="..."}` | One counter per distinct reason a write was refused by a safety rail (e.g. the >50% shrink guard, the hard-cap guard, `no-sources`). **This is the other series worth alerting on** — every reason it tracks is an anomaly; `unchanged` is deliberately excluded (see `no_change` above) so the healthy steady state can't drown out real refusals. |
+| `adsb_reapi_allowlist_refusals{reason="..."}` | One counter per distinct reason a write was refused by a safety rail (`no-sources`, `over-cap`). **This is the other series worth alerting on** — every reason it tracks is an anomaly; `unchanged` is deliberately excluded (see `no_change` above) so the healthy steady state can't drown out real refusals. |
 | `adsb_reapi_allowlist_consecutive_partial_cycles` | Number of reconciles in a row in which **at least one source failed** (`source_errors > 0`), so the set could only grow. Resets to 0 the first time every source reports. Distinguishes "one transient blip" from "we've been additive-only for hours", which nothing else surfaces. Deliberately keyed off source health rather than the write outcome: when the additive union equals the current set, `guards.decide` returns `unchanged`, so a counter driven off the decision reason reads 0 during exactly the sustained degradation this exists to detect. `guards.decide` itself is unchanged and stays additive-only for as long as a source is down. |
 
 ## 7. RBAC

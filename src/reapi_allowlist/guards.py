@@ -7,7 +7,6 @@ reversible; removing one locks a real person out of the API.
 from dataclasses import dataclass
 
 DEFAULT_MAX_ENTRIES = 50_000
-DEFAULT_MIN_RETAIN_RATIO = 0.5
 
 
 @dataclass(frozen=True)
@@ -24,7 +23,6 @@ def decide(
     all_sources_ok: bool,
     any_source_ok: bool,
     max_entries: int = DEFAULT_MAX_ENTRIES,
-    min_retain_ratio: float = DEFAULT_MIN_RETAIN_RATIO,
 ) -> WriteDecision:
     """Return whether to write, why, and what the resulting set would be.
 
@@ -51,8 +49,5 @@ def decide(
 
     if result == current:
         return WriteDecision(False, "unchanged", current)
-
-    if current and len(result) < len(current) * min_retain_ratio:
-        return WriteDecision(False, "shrink-guard", current)
 
     return WriteDecision(True, reason, result)

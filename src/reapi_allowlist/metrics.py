@@ -13,6 +13,7 @@ class Metrics:
     last_success: float | None = None
     refusals: dict[str, int] = field(default_factory=dict)
     no_change: int = 0
+    large_shrink: int = 0
     consecutive_partial_cycles: int = 0
 
     def render(self, now: float) -> str:
@@ -22,6 +23,7 @@ class Metrics:
             f"adsb_reapi_allowlist_adds {self.adds}",
             f"adsb_reapi_allowlist_removes {self.removes}",
             f"adsb_reapi_allowlist_parse_anomalies {self.anomalies}",
+            f"adsb_reapi_allowlist_large_shrink {self.large_shrink}",
             f"adsb_reapi_allowlist_source_errors {self.source_errors}",
             f"adsb_reapi_allowlist_seconds_since_success {since}",
             f"adsb_reapi_allowlist_no_change {self.no_change}",

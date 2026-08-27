@@ -38,11 +38,22 @@ def test_partial_sources_adding_nothing_new_is_a_no_write():
     assert (d.write, d.reason) == (False, "unchanged")
 
 
-def test_refuses_a_write_that_would_halve_the_set():
+def test_a_large_shrink_is_now_performed_not_refused():
+    # The shrink guard used to refuse this and never relent, deadlocking until
+    # someone hand-patched the object. The harm it guarded against is up to one
+    # poll interval without re-api access, self-healing; the deadlock was worse.
+    # Detection moved to an observability counter -- see test_controller.
     d = decide(frozenset({A, B, C, D}), frozenset({A}),
                all_sources_ok=True, any_source_ok=True)
-    assert (d.write, d.reason) == (False, "shrink-guard")
-    assert d.prefixes == frozenset({A, B, C, D})
+    assert (d.write, d.reason) == (True, "ok")
+    assert d.prefixes == frozenset({A})
+
+
+def test_a_collapse_to_empty_is_also_performed():
+    d = decide(frozenset({A, B, C, D}), frozenset(),
+               all_sources_ok=True, any_source_ok=True)
+    assert (d.write, d.reason) == (True, "ok")
+    assert d.prefixes == frozenset()
 
 
 def test_allows_a_shrink_that_stays_above_the_ratio():
