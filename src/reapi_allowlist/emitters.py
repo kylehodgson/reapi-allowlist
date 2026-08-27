@@ -46,7 +46,7 @@ class CCGEmitter:
 class CGCCEmitter:
     """CiliumGatewayClassConfig: namespaced, v2alpha1 only as of Cilium 1.20.1."""
 
-    def __init__(self, name: str, namespace: str, service_defaults: dict) -> None:
+    def __init__(self, name: str, namespace: str) -> None:
         self.ref = ResourceRef(
             api_version="cilium.io/v2alpha1",
             kind="CiliumGatewayClassConfig",
@@ -54,13 +54,15 @@ class CGCCEmitter:
             name=name,
             namespace=namespace,
         )
-        self._service_defaults = dict(service_defaults)
 
     def render(self, prefixes: Iterable[str]) -> dict:
-        # Copy, so the caller's defaults are never mutated and every write
-        # carries loadBalancerClass, ipFamilyPolicy and friends intact.
-        service = dict(self._service_defaults)
-        service["loadBalancerSourceRanges"] = sorted(prefixes)
+        # Write loadBalancerSourceRanges and NOTHING else. This is a merge
+        # patch, so every field we omit keeps whatever the manifest set. An
+        # earlier version sent a whole block of service defaults with each
+        # write, which silently reverted operator changes once a minute and
+        # reimposed externalTrafficPolicy: Local -- under which a Cilium
+        # Gateway's selector-less Service gets no address at all.
+        service = {"loadBalancerSourceRanges": sorted(prefixes)}
         return {
             "apiVersion": self.ref.api_version,
             "kind": self.ref.kind,

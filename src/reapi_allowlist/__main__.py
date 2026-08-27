@@ -17,15 +17,6 @@ from .k8s import K8sClient, load_config
 from .metrics import Metrics
 from .sources import gather_sources
 
-SERVICE_DEFAULTS = {
-    "type": "LoadBalancer",
-    "loadBalancerClass": "io.cilium/node",
-    "externalTrafficPolicy": "Local",
-    "ipFamilyPolicy": "RequireDualStack",
-    "loadBalancerSourceRangesPolicy": "Allow",
-}
-
-
 def parse_args(argv=None):
     p = argparse.ArgumentParser(prog="reapi-allowlist")
     p.add_argument("--emit", choices=["ccg", "cgcc"], default="ccg")
@@ -44,7 +35,7 @@ def parse_args(argv=None):
 def build_emitter(args):
     if args.emit == "ccg":
         return CCGEmitter(args.name)
-    return CGCCEmitter(args.name, args.namespace, SERVICE_DEFAULTS)
+    return CGCCEmitter(args.name, args.namespace)
 
 
 async def serve_metrics(metrics: Metrics, port: int) -> None:

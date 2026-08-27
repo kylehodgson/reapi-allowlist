@@ -1,14 +1,5 @@
 from reapi_allowlist.emitters import CCGEmitter, CGCCEmitter
 
-SERVICE_DEFAULTS = {
-    "type": "LoadBalancer",
-    "loadBalancerClass": "io.cilium/node",
-    "externalTrafficPolicy": "Local",
-    "ipFamilyPolicy": "RequireDualStack",
-    "loadBalancerSourceRangesPolicy": "Allow",
-}
-
-
 def test_ccg_ref_is_cluster_scoped_v2():
     ref = CCGEmitter().ref
     assert ref.api_version == "cilium.io/v2"
@@ -33,29 +24,34 @@ def test_ccg_extract_tolerates_a_missing_object():
 
 
 def test_cgcc_ref_is_namespaced_v2alpha1():
-    ref = CGCCEmitter("reapi-gateway-config", "adsblol", SERVICE_DEFAULTS).ref
+    ref = CGCCEmitter("reapi-config", "adsblol").ref
     assert ref.api_version == "cilium.io/v2alpha1"
     assert ref.kind == "CiliumGatewayClassConfig"
     assert ref.plural == "ciliumgatewayclassconfigs"
     assert ref.namespace == "adsblol"
 
 
-def test_cgcc_preserves_service_defaults_alongside_the_ranges():
-    emitter = CGCCEmitter("reapi-gateway-config", "adsblol", SERVICE_DEFAULTS)
-    service = emitter.render({"1.0.0.2/32", "1.0.0.1/32"})["spec"]["service"]
-    assert service["loadBalancerSourceRanges"] == ["1.0.0.1/32", "1.0.0.2/32"]
-    # Losing loadBalancerClass would leave the Gateway with no address.
-    assert service["loadBalancerClass"] == "io.cilium/node"
-    assert service["ipFamilyPolicy"] == "RequireDualStack"
+def test_cgcc_writes_only_the_source_ranges():
+    """The controller owns loadBalancerSourceRanges and nothing else.
+
+    Every other field belongs to whoever manages the manifest -- Flux, in
+    production. This is a merge patch, so fields we omit are left untouched;
+    sending them would silently revert operator changes on the next cycle.
+    Sending externalTrafficPolicy in particular reintroduced `Local`, which
+    leaves a Cilium Gateway with no address at all.
+    """
+    service = CGCCEmitter("reapi-config", "adsblol").render(
+        {"1.0.0.2/32", "1.0.0.1/32"}
+    )["spec"]["service"]
+    assert service == {"loadBalancerSourceRanges": ["1.0.0.1/32", "1.0.0.2/32"]}
 
 
-def test_cgcc_render_does_not_mutate_the_defaults():
-    defaults = dict(SERVICE_DEFAULTS)
-    CGCCEmitter("c", "adsblol", defaults).render({"1.0.0.1/32"})
-    assert "loadBalancerSourceRanges" not in defaults
+def test_cgcc_render_touches_no_other_spec_field():
+    body = CGCCEmitter("reapi-config", "adsblol").render({"1.0.0.1/32"})
+    assert set(body["spec"].keys()) == {"service"}
 
 
 def test_cgcc_extract_reads_the_list_back():
     obj = {"spec": {"service": {"loadBalancerSourceRanges": ["1.0.0.1/32"]}}}
-    emitter = CGCCEmitter("c", "adsblol", SERVICE_DEFAULTS)
+    emitter = CGCCEmitter("c", "adsblol")
     assert emitter.extract(obj) == {"1.0.0.1/32"}
