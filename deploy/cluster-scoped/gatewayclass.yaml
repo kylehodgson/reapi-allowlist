@@ -1,0 +1,12 @@
+# Cluster-scoped: apply directly, not through kustomize.
+apiVersion: gateway.networking.k8s.io/v1
+kind: GatewayClass
+metadata:
+  name: cilium-reapi
+spec:
+  controllerName: io.cilium/gateway-controller
+  parametersRef:
+    group: cilium.io
+    kind: CiliumGatewayClassConfig
+    name: reapi-config
+    namespace: adsblol

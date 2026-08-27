@@ -1,0 +1,14 @@
+apiVersion: cilium.io/v2alpha1
+kind: CiliumGatewayClassConfig
+metadata:
+  name: reapi-config
+spec:
+  description: "re-api gateway: node-IPAM LB, restricted to current feeders"
+  service:
+    type: LoadBalancer
+    loadBalancerClass: io.cilium/node
+    externalTrafficPolicy: Cluster   # MUST be Cluster, or the Gateway gets no address
+    allocateLoadBalancerNodePorts: false
+    ipFamilyPolicy: RequireDualStack
+    loadBalancerSourceRangesPolicy: Allow
+    # loadBalancerSourceRanges is written by the controller. Do not declare it here.

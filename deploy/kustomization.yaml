@@ -1,0 +1,9 @@
+namespace: adsblol
+resources:
+- rbac.yaml
+- deployment.yaml
+- servicemonitor.yaml
+- gatewayclassconfig.yaml
+- gateway.yaml
+commonLabels:
+  app: reapi-allowlist

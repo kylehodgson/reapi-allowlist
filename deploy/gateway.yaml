@@ -1,0 +1,39 @@
+# hostname, certificateRef and backendRef must match your cluster; see README.
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: reapi
+  annotations:
+    external-dns.alpha.kubernetes.io/hostname: re-api.adsb.lol
+    external-dns.alpha.kubernetes.io/cloudflare-proxied: "false"
+spec:
+  gatewayClassName: cilium-reapi
+  listeners:
+  - name: https
+    protocol: HTTPS
+    port: 443
+    hostname: re-api.adsb.lol
+    tls:
+      mode: Terminate
+      certificateRefs:
+      - kind: Secret
+        name: adsblol-tls
+    allowedRoutes:
+      namespaces:
+        from: Same
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: reapi
+spec:
+  parentRefs:
+  - name: reapi
+  hostnames:
+  - re-api.adsb.lol
+  rules:
+  - matches:
+    - path: {type: PathPrefix, value: /}
+    backendRefs:
+    - name: reapi-readsb
+      port: 30152

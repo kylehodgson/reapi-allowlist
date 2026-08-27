@@ -113,10 +113,6 @@ async def gather_sources(
 ) -> list[SourceResult]:
     ingest_hosts = await resolve_hosts(resolver, ingest_dns)
     extra: list[SourceResult] = []
-    # Discovering mlat the same way ingest is discovered, where a headless
-    # Service exists for it. Hand-listing shards means a shard added later is
-    # silently missed, and its feeders silently denied. --mlat-host stays for
-    # deployments with no such Service.
     if mlat_dns:
         discovered = await resolve_hosts(resolver, mlat_dns)
         if discovered:
@@ -125,9 +121,7 @@ async def gather_sources(
             log.warning("no addresses for %s", mlat_dns)
             extra.append(SourceResult(name=f"mlat-dns:{mlat_dns}"))
     if not ingest_hosts:
-        # A name that fails to resolve must count as a failed source, not as
-        # no source at all -- otherwise all_sources_ok stays True and the
-        # additive-only rail never engages.
+        # A failed resolve is a failed source, not the absence of one.
         log.warning("no addresses for %s", ingest_dns)
         extra.append(SourceResult(name=f"ingest-dns:{ingest_dns}"))
     named = [
@@ -139,9 +133,6 @@ async def gather_sources(
                                     parse_mlat_clients, timeout))
         for h in mlat_hosts
     ]
-    # Belt-and-braces: fetch_source already never raises, but return_exceptions
-    # keeps this module's "exceptions never escape" contract true even if that
-    # ever regresses, so one bad source can't take its siblings down with it.
     raw = await asyncio.gather(*(coro for _, coro in named), return_exceptions=True)
     results: list[SourceResult] = []
     for (name, _), value in zip(named, raw):

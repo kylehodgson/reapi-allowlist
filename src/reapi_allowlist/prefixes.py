@@ -1,15 +1,11 @@
-# src/reapi_allowlist/prefixes.py
 """Normalise bare IP addresses into the CIDR form Cilium expects."""
 
 import ipaddress
 
 _SUFFIX = {4: "/32", 6: "/128"}
 
-# Ranges that cannot be a real feeder's source address arriving from the
-# internet. Deliberately an explicit list rather than `is_global` or
-# `is_private`: those also exclude carrier-grade NAT (a feeder really can
-# arrive from 100.64/10) and the documentation ranges used in tests and lab
-# work, neither of which indicates anything wrong.
+# Explicit, not is_private/is_global: those also catch carrier-grade NAT and
+# the documentation ranges, neither of which indicates anything wrong.
 _BOGUS = tuple(
     ipaddress.ip_network(n)
     for n in (
@@ -23,17 +19,9 @@ _BOGUS = tuple(
 def is_internal_prefix(prefix: str) -> bool:
     """True for a prefix that cannot be an internet feeder's source address.
 
-    Reported, never rejected. mlat-server falls back to the socket peer when
-    no PROXY line arrives (`jsonclient.py`), so a broken PROXY path yields
-    haproxy's own pod IP -- syntactically valid, and it would otherwise enter
-    the allowlist with nothing to distinguish it. readsb's equivalent failure
-    produces the literal "port" and is already counted as an anomaly.
-
-    Not a rejection, because a private address is not always wrong: where the
-    feeders and the cluster share a network -- any lab, and some real
-    deployments -- RFC 1918 and ULA are exactly what a feeder looks like.
-    Denying them would lock out every feeder in that setup. The failure this
-    guards is silence, so the answer is a metric, not a refusal.
+    Reported, never rejected: where feeders and cluster share a network,
+    RFC 1918 and ULA are what a real feeder looks like, and denying them
+    would lock out everyone.
     """
     try:
         addr = ipaddress.ip_address(prefix.split("/")[0])
@@ -56,10 +44,7 @@ def to_prefix(value: str) -> str | None:
     except ValueError:
         return None
 
-    # A dual-stack listener reports IPv4 peers as ::ffff:a.b.c.d, and haproxy
-    # passes that straight through in the PROXY header ("TCP6 ::ffff:1.2.3.4").
-    # Emitting it as a /128 yields an entry that cannot match the feeder's
-    # actual IPv4 traffic, so a live feeder would be denied. Unwrap it.
+    # ::ffff:a.b.c.d as a /128 cannot match the feeder's actual IPv4 traffic.
     if isinstance(addr, ipaddress.IPv6Address) and addr.ipv4_mapped:
         addr = addr.ipv4_mapped
 

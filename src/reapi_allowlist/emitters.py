@@ -56,12 +56,7 @@ class CGCCEmitter:
         )
 
     def render(self, prefixes: Iterable[str]) -> dict:
-        # Write loadBalancerSourceRanges and NOTHING else. This is a merge
-        # patch, so every field we omit keeps whatever the manifest set. An
-        # earlier version sent a whole block of service defaults with each
-        # write, which silently reverted operator changes once a minute and
-        # reimposed externalTrafficPolicy: Local -- under which a Cilium
-        # Gateway's selector-less Service gets no address at all.
+        # Source ranges and nothing else: omitted fields keep the manifest's values.
         service = {"loadBalancerSourceRanges": sorted(prefixes)}
         return {
             "apiVersion": self.ref.api_version,
