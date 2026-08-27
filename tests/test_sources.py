@@ -3,7 +3,7 @@ import pytest
 from aiohttp import web
 
 from reapi_allowlist.parse import parse_mlat_clients, parse_readsb_clients
-from reapi_allowlist.sources import _url, fetch_source, gather_sources
+from reapi_allowlist.sources import _url, fetch_source, gather_sources, resolve_hosts
 
 READSB_BODY = {"clients": [["uuid", "TCP4 203.0.113.7 10.0.0.1 1 2", 0, 0]]}
 MLAT_BODY = {"alice": {"source_ip": "198.51.100.20"}}
@@ -235,3 +235,48 @@ def test_url_does_not_double_bracket_an_already_bracketed_host():
 def test_url_leaves_ipv4_and_hostnames_unbracketed():
     assert _url("10.0.0.1", 150) == "http://10.0.0.1:150/clients.json"
     assert _url("ingest-a", 150) == "http://ingest-a:150/clients.json"
+
+
+class _Answer:
+    def __init__(self, host):
+        self.host = host
+
+
+class _FakeResolver:
+    """Records which record types were asked for."""
+
+    def __init__(self, by_record):
+        self.by_record = by_record
+        self.asked = []
+
+    async def query(self, name, record):
+        self.asked.append(record)
+        if record not in self.by_record:
+            raise Exception(f"NXDOMAIN {record}")
+        return [_Answer(h) for h in self.by_record[record]]
+
+
+@pytest.mark.asyncio
+async def test_resolve_hosts_asks_for_both_families():
+    """The cluster convention is RequireDualStack, so A alone misses pods."""
+    r = _FakeResolver({"A": ["10.0.0.1"], "AAAA": ["2001:db8::1"]})
+    assert await resolve_hosts(r, "svc") == ["10.0.0.1", "2001:db8::1"]
+    assert r.asked == ["A", "AAAA"]
+
+
+@pytest.mark.asyncio
+async def test_resolve_hosts_tolerates_one_family_missing():
+    # A v4-only Service NXDOMAINs on AAAA; that is normal, not a failure.
+    r = _FakeResolver({"A": ["10.0.0.1"]})
+    assert await resolve_hosts(r, "svc") == ["10.0.0.1"]
+
+
+@pytest.mark.asyncio
+async def test_resolve_hosts_dedupes_across_families():
+    r = _FakeResolver({"A": ["10.0.0.1"], "AAAA": ["10.0.0.1"]})
+    assert await resolve_hosts(r, "svc") == ["10.0.0.1"]
+
+
+@pytest.mark.asyncio
+async def test_resolve_hosts_returns_empty_when_both_families_fail():
+    assert await resolve_hosts(_FakeResolver({}), "svc") == []

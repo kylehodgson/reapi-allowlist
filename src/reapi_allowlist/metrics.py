@@ -9,6 +9,7 @@ class Metrics:
     adds: int = 0
     removes: int = 0
     anomalies: int = 0
+    internal_prefixes: int = 0
     source_errors: int = 0
     last_success: float | None = None
     refusals: dict[str, int] = field(default_factory=dict)
@@ -23,6 +24,7 @@ class Metrics:
             f"adsb_reapi_allowlist_adds {self.adds}",
             f"adsb_reapi_allowlist_removes {self.removes}",
             f"adsb_reapi_allowlist_parse_anomalies {self.anomalies}",
+            f"adsb_reapi_allowlist_internal_prefixes {self.internal_prefixes}",
             f"adsb_reapi_allowlist_large_shrink {self.large_shrink}",
             f"adsb_reapi_allowlist_source_errors {self.source_errors}",
             f"adsb_reapi_allowlist_seconds_since_success {since}",

@@ -28,6 +28,9 @@ def parse_args(argv=None):
     p.add_argument("--ingest-port", type=int, default=150)
     p.add_argument("--mlat-host", action="append", default=[])
     p.add_argument("--mlat-port", type=int, default=150)
+    p.add_argument("--mlat-dns", default=None,
+                   help="headless Service resolved to mlat pod addresses, the "
+                        "way --ingest-dns works. Combined with any --mlat-host.")
     p.add_argument("--metrics-port", type=int, default=9090)
     return p.parse_args(argv)
 
@@ -70,6 +73,7 @@ async def main() -> None:
                     session, resolver,
                     ingest_dns=args.ingest_dns, ingest_port=args.ingest_port,
                     mlat_hosts=args.mlat_host, mlat_port=args.mlat_port,
+                    mlat_dns=args.mlat_dns,
                 )
                 await reconcile(sources=sources, feeders=feeders, emitter=emitter,
                                 k8s=k8s, metrics=metrics, now=time.time(),

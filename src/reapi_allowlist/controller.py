@@ -3,6 +3,7 @@
 import logging
 
 from .decay import FeederSet
+from .prefixes import is_internal_prefix
 from .guards import WriteDecision, decide
 from .k8s import K8sClient
 from .metrics import Metrics
@@ -61,6 +62,11 @@ async def reconcile(
     )
 
     metrics.anomalies = anomalies
+    # A private or loopback address in the set means a PROXY header did not
+    # arrive: mlat-server falls back to the socket peer, so haproxy's own pod
+    # IP appears as if it were a feeder. Counted rather than dropped -- see
+    # prefixes.is_internal_prefix for why.
+    metrics.internal_prefixes = sum(1 for p in proposed if is_internal_prefix(p))
     metrics.source_errors = source_errors
     metrics.set_size = len(decision.prefixes)
 

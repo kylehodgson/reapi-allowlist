@@ -79,13 +79,25 @@ async def fetch_source(
 
 
 async def resolve_hosts(resolver, dns_name: str) -> list[str]:
-    """Resolve a headless Service to its pod addresses. Empty list on failure."""
-    try:
-        answers = await resolver.query(dns_name, "A")
-        return [a.host for a in answers]
-    except Exception as exc:  # noqa: BLE001
-        log.warning("resolve %s: %s", dns_name, exc)
-        return []
+    """Resolve a headless Service to its pod addresses. Empty list on failure.
+
+    Both families are queried. The cluster convention is
+    `ipFamilyPolicy: RequireDualStack`, so an A-only lookup would miss every
+    pod on an IPv6-only or v6-preferred Service. One family returning NXDOMAIN
+    is normal and not worth a warning; only a total failure is.
+    """
+    hosts: list[str] = []
+    errors: list[str] = []
+    for record in ("A", "AAAA"):
+        try:
+            answers = await resolver.query(dns_name, record)
+            hosts.extend(a.host for a in answers)
+        except Exception as exc:  # noqa: BLE001
+            errors.append(f"{record}: {exc}")
+    if not hosts:
+        log.warning("resolve %s: %s", dns_name, "; ".join(errors) or "no records")
+    # A dual-stack Service can return the same pod under both families.
+    return list(dict.fromkeys(hosts))
 
 
 async def gather_sources(
@@ -96,10 +108,22 @@ async def gather_sources(
     ingest_port: int | None,
     mlat_hosts: list[str],
     mlat_port: int | None,
+    mlat_dns: str | None = None,
     timeout: float = 5.0,
 ) -> list[SourceResult]:
     ingest_hosts = await resolve_hosts(resolver, ingest_dns)
     extra: list[SourceResult] = []
+    # Discovering mlat the same way ingest is discovered, where a headless
+    # Service exists for it. Hand-listing shards means a shard added later is
+    # silently missed, and its feeders silently denied. --mlat-host stays for
+    # deployments with no such Service.
+    if mlat_dns:
+        discovered = await resolve_hosts(resolver, mlat_dns)
+        if discovered:
+            mlat_hosts = list(dict.fromkeys(list(mlat_hosts) + discovered))
+        else:
+            log.warning("no addresses for %s", mlat_dns)
+            extra.append(SourceResult(name=f"mlat-dns:{mlat_dns}"))
     if not ingest_hosts:
         # A name that fails to resolve must count as a failed source, not as
         # no source at all -- otherwise all_sources_ok stays True and the
