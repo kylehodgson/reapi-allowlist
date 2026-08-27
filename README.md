@@ -60,6 +60,15 @@ last-seen-now, so a restart degrades to "everyone currently listed gets one
 more decay window" rather than to an empty set. This seeding is internal
 behaviour, not a configurable option.
 
+**The consequence is that a restart resets the decay clock for the whole set**,
+because there is nowhere to persist per-prefix timestamps between processes.
+Under frequent restarts -- rolling updates, node drains, evictions -- an
+address can therefore stay listed far longer than `--window` suggests, in
+principle indefinitely if restarts are more frequent than the window. That
+error runs in the safe direction for this component (a stale feeder keeps read
+access it no longer strictly qualifies for), but `--window` is a floor on
+residency, not the ceiling it reads like.
+
 ## 4. Emitters
 
 The controller builds one sorted, deduplicated list of feeder prefixes
@@ -108,6 +117,7 @@ default `9090`). Every series comes from `Metrics.render`:
 | `adsb_reapi_allowlist_large_shrink` | Times the set dropped by more than half in a single cycle. The write still happens — this is a signal, not a rail. A steep drop is far more likely to be a bug on our side (a `clients.json` format change, a wrong `--ingest-dns`, a PROXY version change) than every feeder leaving at once, so **alert on it** — but check `parse_anomalies` and `source_errors` before assuming anything. Deliberately not a refusal: the harm of a wrong drop is up to one poll interval without re-api access and it heals itself, whereas refusing deadlocked permanently and needed a hand-patched object to clear. |
 | `adsb_reapi_allowlist_parse_anomalies` | Count of client entries that didn't parse as expected. Non-zero here means PROXY protocol is not active on that path — the parser saw the no-PROXY fallback shape instead of a real source address. |
 | `adsb_reapi_allowlist_source_errors` | Fetch errors against readsb or mlat-server sources. |
+| `adsb_reapi_allowlist_internal_prefixes` | Prefixes in the set that are RFC 1918, ULA, loopback or link-local. On a deployment whose feeders come from the internet, **any** non-zero value means a PROXY header did not arrive: mlat-server falls back to the socket peer, so haproxy's own pod IP enters the set looking like a feeder, with `parse_anomalies` staying at zero. Not filtered out, because where feeders and cluster share a network those addresses are legitimate and dropping them would deny everyone. Alert on it only if your feeders are external. |
 | `adsb_reapi_allowlist_seconds_since_success` | Seconds since the controller last did its job (`-1` if it never has). "Did its job" means exactly two things: it wrote successfully, or it correctly found nothing to change (`unchanged`). It deliberately does **not** advance on a refused write (`no-sources`, `over-cap`) or when `k8s.patch` itself fails — those are precisely the conditions this metric exists to surface. **This is the series worth alerting on** — a rising value means the controller is stuck, every source is unreachable, or writes are failing. |
 | `adsb_reapi_allowlist_no_change` | Count of reconciles where the computed set exactly matched what's already live — the healthy, do-nothing steady state. Not a refusal; kept out of the `refusals` series so that series stays alertable. |
 | `adsb_reapi_allowlist_refusals{reason="..."}` | One counter per distinct reason a write was refused by a safety rail (`no-sources`, `over-cap`). **This is the other series worth alerting on** — every reason it tracks is an anomaly; `unchanged` is deliberately excluded (see `no_change` above) so the healthy steady state can't drown out real refusals. |
