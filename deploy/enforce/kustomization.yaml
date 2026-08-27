@@ -1,0 +1,4 @@
+# Adds the Gateway. From here the allowlist is enforced on every reconcile.
+resources:
+- ../base
+- gateway.yaml

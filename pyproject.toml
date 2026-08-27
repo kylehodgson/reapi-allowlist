@@ -1,6 +1,6 @@
 [project]
 name = "reapi-allowlist"
-version = "0.1.0"
+version = "0.1.4"
 description = "Maintains the ADSB.lol feeder IP set as a Cilium object"
 requires-python = ">=3.12"
 dependencies = [

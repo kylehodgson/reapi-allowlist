@@ -23,4 +23,9 @@ jobs:
     steps:
     - uses: actions/checkout@v4
     - name: kustomize build
-      run: kubectl kustomize deploy > /dev/null
+      run: |
+        kubectl kustomize deploy/base > /dev/null
+        kubectl kustomize deploy/enforce > /dev/null
+    - name: observe-only overlay must not contain a Gateway
+      run: |
+        ! kubectl kustomize deploy/base | grep -q '^kind: Gateway$'

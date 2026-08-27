@@ -54,7 +54,9 @@ async def reconcile(
     )
 
     metrics.anomalies = anomalies
-    metrics.internal_prefixes = sum(1 for p in proposed if is_internal_prefix(p))
+    metrics.internal_prefixes = sum(
+        1 for p in decision.prefixes if is_internal_prefix(p)
+    )
     metrics.source_errors = source_errors
     metrics.set_size = len(decision.prefixes)
 

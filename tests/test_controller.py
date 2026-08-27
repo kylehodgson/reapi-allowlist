@@ -266,3 +266,28 @@ async def test_an_ordinary_change_does_not_count_as_a_large_shrink():
                     feeders=FeederSet(window_seconds=3600), emitter=CCGEmitter(),
                     k8s=k8s, metrics=metrics, now=1000.0)
     assert metrics.large_shrink == 0
+
+
+async def test_internal_prefixes_counts_what_is_written_not_what_was_observed():
+    """The metric must describe the live allowlist, not this cycle's sightings.
+
+    Under partial-additive the written set is the union, so an internal prefix
+    admitted earlier stays in the allowlist while being unobservable now.
+    Counting over the observed set reports 0 for it, and the operator is told
+    0 means no PROXY problem.
+    """
+    internal = "10.42.0.10/32"
+    k8s = FakeK8s(obj={"spec": {"externalCIDRs": [A, internal]}})
+    metrics, feeders = Metrics(), FeederSet(window_seconds=3600)
+
+    decision = await reconcile(
+        sources=[SourceResult("ok", {A}, 0, True),
+                 SourceResult("dead", set(), 0, False)],
+        feeders=feeders, emitter=CCGEmitter(), k8s=k8s,
+        metrics=metrics, now=1000.0, seed_existing=False,
+    )
+
+    # Not seeded and not observed, so it is absent from the observed set --
+    # but the additive rail keeps it in what actually gets written.
+    assert internal in decision.prefixes
+    assert metrics.internal_prefixes == 1

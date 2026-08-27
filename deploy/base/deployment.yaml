@@ -14,7 +14,7 @@ spec:
         runAsUser: 1000
       containers:
       - name: reapi-allowlist
-        image: ghcr.io/kylehodgson/reapi-allowlist:v0.1.3
+        image: ghcr.io/kylehodgson/reapi-allowlist:v0.1.4
         imagePullPolicy: IfNotPresent
         securityContext:
           allowPrivilegeEscalation: false
@@ -35,6 +35,7 @@ spec:
         - --mlat-host=mlat-mlat-server-0a
         - --mlat-host=mlat-mlat-server-0b
         - --mlat-host=mlat-mlat-server-0c
+        - --mlat-host=mlat-mlat-server-0d
         - --mlat-host=mlat-mlat-server-1a
         - --mlat-host=mlat-mlat-server-2a
         - --mlat-host=mlat-mlat-server-2b

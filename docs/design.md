@@ -272,8 +272,11 @@ C -> C : no address found, parse_anomalies 0 to 1
 rather than inferred. `manifests/default/haproxy/default/haproxy.cfg` reads:
 
 ```
-server beast ingest-readsb:30004 send-proxy
-server mlat  mlat-mlat-server:31090 send-proxy
+backend mlat
+    server mlat mlat-mlat-server:31090 send-proxy
+
+backend beast
+    server beast ingest-readsb:30004 send-proxy
 ```
 
 `send-proxy` emits v1; `send-proxy-v2` would emit v2. Every `bind` in the same file

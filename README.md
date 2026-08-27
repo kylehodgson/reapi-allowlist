@@ -1,11 +1,11 @@
 # reapi-allowlist
 
-**Status:** the controller is complete and tested (79 tests). Enforcement is
+**Status:** the controller is complete and tested (86 tests). Enforcement is
 proven on a lab k3s cluster fed by a real Raspberry Pi, not on ADSB.lol's
 production cluster — we have no access to it. Treat this as a reference
 implementation to read, adapt, or ignore.
 
-A prebuilt image is published at `ghcr.io/kylehodgson/reapi-allowlist:v0.1.0`
+A prebuilt image is published at `ghcr.io/kylehodgson/reapi-allowlist:v0.1.4`
 (amd64 + arm64) for convenience. Building your own from this source and pushing
 it somewhere you control is equally reasonable — update the Deployment's
 `image:` field to match.
@@ -19,8 +19,8 @@ to the internet. **This controller enforces nothing on its own.** It reads
 writes that set to one Kubernetes object. Enforcement is a separate, deliberate
 step: the accompanying manifests put a Gateway behind that object, and until
 those are applied nothing this controller writes affects any traffic. Running it
-observe-only first — watching the metrics for a few cycles before anything reads
-the object it maintains — is the intended way to adopt it.
+observe-only first is the intended way to adopt it, and `deploy/base` is exactly
+that — the controller with no Gateway. See *Applying it*.
 
 The address set is sourced by resolving the `ingest-readsb-headless` service
 to its pod IPs and fetching `:150/clients.json` from each (readsb), and by
@@ -52,6 +52,7 @@ a connection closes.
 | `--ingest-port` | `150` | Port serving `clients.json` on each readsb pod. |
 | `--mlat-host` | `[]` (repeatable) | One or more mlat-server hostnames to poll. Pass once per host. |
 | `--mlat-port` | `150` | Port serving `clients.json` on each mlat-server host. |
+| `--mlat-dns` | unset | Headless Service resolved to mlat pod addresses, the way `--ingest-dns` works. Combined with any `--mlat-host`. Prefer this: a shard added later is otherwise missed silently, and its feeders denied silently. |
 | `--metrics-port` | `9090` | Port serving `/metrics` in Prometheus text format. |
 
 There is no `--seed-existing` flag. On startup the controller always reads
@@ -157,14 +158,28 @@ and nothing else is affected.
 
 ### Applying it
 
-The `GatewayClass` is cluster-scoped, so it is kept out of the kustomize tree
-Flux syncs — kustomize's namespace transformer stamps a namespace onto
-cluster-scoped CRDs it does not recognise, which silently breaks them. Create it
-once by hand before the Gateway:
+In two steps, so the allowlist can be watched before it is enforced.
 
 ```
-kubectl apply -f manifests/default/reapi-gateway/cluster-scoped/gatewayclass.yaml
+kubectl apply -f deploy/cluster-scoped/gatewayclass.yaml   # once, by hand
+kubectl apply -k deploy/base                               # observe-only
 ```
+
+`deploy/base` runs the controller and creates the object it writes to. Nothing
+reads that object yet, so no traffic is affected: watch
+`adsb_reapi_allowlist_size`, `parse_anomalies` and `internal_prefixes` for a few
+cycles and confirm the set looks like your feeder population.
+
+```
+kubectl apply -k deploy/enforce                            # enforcement on
+```
+
+`deploy/enforce` adds the Gateway. From the next reconcile, a client not in the
+set cannot reach re-api.
+
+The `GatewayClass` is applied by hand because it is cluster-scoped: kustomize's
+namespace transformer stamps a namespace onto cluster-scoped CRDs it does not
+recognise, which silently breaks them.
 
 Note that the `CiliumGatewayClassConfig` the controller writes deliberately does
 **not** declare `loadBalancerSourceRanges` in git. That field belongs to the
