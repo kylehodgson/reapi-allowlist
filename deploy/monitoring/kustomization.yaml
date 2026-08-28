@@ -1,0 +1,6 @@
+# Requires the prometheus-operator CRDs.
+namespace: adsblol
+resources:
+- servicemonitor.yaml
+commonLabels:
+  app: reapi-allowlist

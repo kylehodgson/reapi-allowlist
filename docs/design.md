@@ -32,32 +32,6 @@ sequenceDiagram
     I->>A: proxy, or refuse
 ```
 
-<details><summary>PlantUML</summary>
-
-```plantuml
-@startuml
-participant "Feeder" as F
-participant "haproxy" as H
-participant "ingest-readsb" as R
-participant "Client" as X
-participant "Ingress (nginx)" as I
-participant "re-api" as A
-
-note over F, R : feeder path
-F -> H : TCP connect :30004
-H -> R : PROXY v1 line, then Beast frames
-R -> R : writes clients.json --\nknows exactly who is feeding
-
-note over X, A : read path
-note over I : allowlist as an Ingress annotation:\nevery feeder address, one string
-X -> I : GET /re-api/?all
-I -> I : match source against the string
-I -> A : proxy, or refuse
-@enduml
-```
-
-</details>
-
 The feeder path above already runs. The read path is drawn as intended rather than as
 it currently is — see below.
 
@@ -106,30 +80,6 @@ sequenceDiagram
     C->>G: patch spec.service.loadBalancerSourceRanges
 ```
 
-<details><summary>PlantUML</summary>
-
-```plantuml
-@startuml
-autonumber
-participant "Feeder" as F
-participant "haproxy" as H
-participant "ingest-readsb" as R
-participant "controller" as C
-database "CiliumGatewayClassConfig" as G
-
-F -> H : TCP connect :30004
-H -> R : PROXY v1 line, then Beast frames
-R -> R : parse header, store proxy_string
-R -> R : write clients.json
-C -> R : GET :150/clients.json
-C -> C : extract address, union with mlat source_ip
-C -> C : apply decay window and safety rails
-C -> G : patch spec.service.loadBalancerSourceRanges
-@enduml
-```
-
-</details>
-
 haproxy adds the PROXY header because readsb needs it to see the real client — without
 it readsb records `"<host> port <port>"` and yields no address at all. mlat-server is
 more forgiving and falls back to the socket peer.
@@ -162,29 +112,6 @@ sequenceDiagram
         Note over X: client waits, then times out
     end
 ```
-
-<details><summary>PlantUML</summary>
-
-```plantuml
-@startuml
-participant "Client" as X
-participant "Gateway Service\n(source ranges, eBPF)" as S
-participant "Envoy" as E
-participant "re-api" as A
-
-X -> S : TCP SYN to re-api.adsb.lol:443
-alt source is in loadBalancerSourceRanges
-  S -> E : forward
-  E -> A : proxy
-  A --> X : 200
-else source is not
-  S -> S : packet dropped -- no RST, no response
-  note over X : client waits, then times out
-end
-@enduml
-```
-
-</details>
 
 **A denied client hangs rather than getting a clean refusal.** The packet is dropped in
 eBPF before anything speaks HTTP, so there is no 403 and no connection reset — the
@@ -247,26 +174,6 @@ sequenceDiagram
     R->>R: clients.json shows "10.42.0.10 port 39714"
     C->>C: no address found, parse_anomalies 0 to 1
 ```
-
-<details><summary>PlantUML</summary>
-
-```plantuml
-@startuml
-participant "Feeder" as F
-participant "haproxy\n(send-proxy-v2)" as H
-participant "ingest-readsb" as R
-participant "controller" as C
-
-F -> H : TCP connect
-H -> R : PROXY v2 header (binary), then Beast frames
-R -> R : cannot parse, no error raised
-R -> R : falls back to socket peer = haproxy's IP
-R -> R : clients.json shows "10.42.0.10 port 39714"
-C -> C : no address found, parse_anomalies 0 to 1
-@enduml
-```
-
-</details>
 
 **This is not something we think is broken today**, and the evidence is in the config
 rather than inferred. `manifests/default/haproxy/default/haproxy.cfg` reads:

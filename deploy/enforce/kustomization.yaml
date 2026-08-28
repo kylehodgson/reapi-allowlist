@@ -1,4 +1,7 @@
 # Adds the Gateway. From here the allowlist is enforced on every reconcile.
+# namespace is repeated here deliberately: the base's transformer does not
+# apply to resources an overlay adds alongside it.
+namespace: adsblol
 resources:
 - ../base
 - gateway.yaml

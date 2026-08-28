@@ -24,8 +24,23 @@ jobs:
     - uses: actions/checkout@v4
     - name: kustomize build
       run: |
-        kubectl kustomize deploy/base > /dev/null
-        kubectl kustomize deploy/enforce > /dev/null
+        for o in base enforce monitoring; do kubectl kustomize deploy/$o > /dev/null; done
     - name: observe-only overlay must not contain a Gateway
       run: |
         ! kubectl kustomize deploy/base | grep -q '^kind: Gateway$'
+    - name: every object must carry a namespace
+      run: |
+        for o in base enforce monitoring; do
+          kubectl kustomize deploy/$o | python3 -c '
+import sys
+bad = []
+for d in sys.stdin.read().split("\n---\n"):
+    kind = ns = None
+    for line in d.split("\n"):
+        if line.startswith("kind: "): kind = line[6:]
+        if line.startswith("  namespace: "): ns = line[13:]
+    if kind and not ns: bad.append(kind)
+if bad:
+    sys.exit("no namespace on: " + ", ".join(bad))
+'
+        done
