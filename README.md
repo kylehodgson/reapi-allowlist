@@ -117,12 +117,14 @@ injected, so decay and the safety rails are tested against explicit timestamps.
 CI runs these on Python 3.12 and 3.13, builds the overlays, and asserts that
 every object carries a namespace and that `deploy/base` contains no Gateway.
 
-Mutation testing is configured — `mutmut run`, then `mutmut results`. Two known
-gaps, neither yet closed: `__main__.py` has no test at all (198 mutants
-uncovered — it is the CLI and run loop, including the startup-seeding flip),
-and 124 mutants survive elsewhere, concentrated in `sources.py`. Notably
-nothing asserts that a fetch timeout is applied, so a hung source would stall
-a reconcile.
+Mutation testing is configured — `mutmut run`, then `mutmut results`. Note
+that mutmut caches on source hash, so changing only a test does not re-run
+anything; delete `mutants/` to force a clean pass.
+
+32 mutants have no covering test, all of them in `main()` — constructor wiring
+whose only test would assert that constructors get called. 170 survive
+elsewhere, concentrated in `sources.py`, where nothing asserts a fetch timeout
+is applied: a hung source would stall a reconcile.
 
 ## More
 
