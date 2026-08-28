@@ -1,9 +1,7 @@
 name: docker build
 on:
-  schedule:
-    - cron: "0 10 * * *"
   push:
-    branches: ["**"]
+    branches: [main]
     tags: ["v*.*.*"]
   pull_request:
     branches: [main]
@@ -28,7 +26,6 @@ jobs:
         with:
           images: ghcr.io/${{ github.repository }}
           tags: |
-            type=schedule
             type=ref,event=branch
             type=ref,event=pr
             type=semver,pattern={{version}}
