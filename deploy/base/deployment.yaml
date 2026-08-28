@@ -14,7 +14,7 @@ spec:
         runAsUser: 1000
       containers:
       - name: reapi-allowlist
-        image: ghcr.io/kylehodgson/reapi-allowlist:v0.1.4
+        image: ghcr.io/kylehodgson/reapi-allowlist:0.1.5
         imagePullPolicy: IfNotPresent
         securityContext:
           allowPrivilegeEscalation: false
