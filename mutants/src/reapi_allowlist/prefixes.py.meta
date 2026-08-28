@@ -1,0 +1,58 @@
+{
+    "exit_code_by_key": {
+        "reapi_allowlist.prefixes.x_is_internal_prefix__mutmut_1": 1,
+        "reapi_allowlist.prefixes.x_is_internal_prefix__mutmut_2": 1,
+        "reapi_allowlist.prefixes.x_is_internal_prefix__mutmut_3": 1,
+        "reapi_allowlist.prefixes.x_is_internal_prefix__mutmut_4": 1,
+        "reapi_allowlist.prefixes.x_is_internal_prefix__mutmut_5": 1,
+        "reapi_allowlist.prefixes.x_is_internal_prefix__mutmut_6": 0,
+        "reapi_allowlist.prefixes.x_is_internal_prefix__mutmut_7": 0,
+        "reapi_allowlist.prefixes.x_is_internal_prefix__mutmut_8": 0,
+        "reapi_allowlist.prefixes.x_is_internal_prefix__mutmut_9": 1,
+        "reapi_allowlist.prefixes.x_is_internal_prefix__mutmut_10": 1,
+        "reapi_allowlist.prefixes.x_is_internal_prefix__mutmut_11": 1,
+        "reapi_allowlist.prefixes.x_to_prefix__mutmut_1": 1,
+        "reapi_allowlist.prefixes.x_to_prefix__mutmut_2": 1,
+        "reapi_allowlist.prefixes.x_to_prefix__mutmut_3": 1,
+        "reapi_allowlist.prefixes.x_to_prefix__mutmut_4": 1
+    },
+    "hash_by_function_name": {
+        "x_is_internal_prefix": "062db89fec71",
+        "x_to_prefix": "c261edf0c090"
+    },
+    "type_check_error_by_key": {},
+    "durations_by_key": {
+        "reapi_allowlist.prefixes.x_is_internal_prefix__mutmut_1": 0.028978,
+        "reapi_allowlist.prefixes.x_is_internal_prefix__mutmut_2": 0.030539,
+        "reapi_allowlist.prefixes.x_is_internal_prefix__mutmut_3": 0.035199,
+        "reapi_allowlist.prefixes.x_is_internal_prefix__mutmut_4": 0.026919,
+        "reapi_allowlist.prefixes.x_is_internal_prefix__mutmut_5": 0.027527,
+        "reapi_allowlist.prefixes.x_is_internal_prefix__mutmut_9": 0.033467,
+        "reapi_allowlist.prefixes.x_is_internal_prefix__mutmut_6": 0.331974,
+        "reapi_allowlist.prefixes.x_is_internal_prefix__mutmut_7": 0.109576,
+        "reapi_allowlist.prefixes.x_is_internal_prefix__mutmut_8": 0.091147,
+        "reapi_allowlist.prefixes.x_is_internal_prefix__mutmut_10": 0.02855,
+        "reapi_allowlist.prefixes.x_is_internal_prefix__mutmut_11": 0.031744,
+        "reapi_allowlist.prefixes.x_to_prefix__mutmut_1": 0.029576,
+        "reapi_allowlist.prefixes.x_to_prefix__mutmut_2": 0.052027,
+        "reapi_allowlist.prefixes.x_to_prefix__mutmut_3": 0.030702,
+        "reapi_allowlist.prefixes.x_to_prefix__mutmut_4": 0.029616
+    },
+    "estimated_durations_by_key": {
+        "reapi_allowlist.prefixes.x_is_internal_prefix__mutmut_1": 0.007976962486281991,
+        "reapi_allowlist.prefixes.x_is_internal_prefix__mutmut_2": 0.007976962486281991,
+        "reapi_allowlist.prefixes.x_is_internal_prefix__mutmut_3": 0.007976962486281991,
+        "reapi_allowlist.prefixes.x_is_internal_prefix__mutmut_4": 0.007976962486281991,
+        "reapi_allowlist.prefixes.x_is_internal_prefix__mutmut_5": 0.007976962486281991,
+        "reapi_allowlist.prefixes.x_is_internal_prefix__mutmut_6": 0.007976962486281991,
+        "reapi_allowlist.prefixes.x_is_internal_prefix__mutmut_7": 0.007976962486281991,
+        "reapi_allowlist.prefixes.x_is_internal_prefix__mutmut_8": 0.007976962486281991,
+        "reapi_allowlist.prefixes.x_is_internal_prefix__mutmut_9": 0.007976962486281991,
+        "reapi_allowlist.prefixes.x_is_internal_prefix__mutmut_10": 0.007976962486281991,
+        "reapi_allowlist.prefixes.x_is_internal_prefix__mutmut_11": 0.007976962486281991,
+        "reapi_allowlist.prefixes.x_to_prefix__mutmut_1": 0.00957833172287792,
+        "reapi_allowlist.prefixes.x_to_prefix__mutmut_2": 0.00957833172287792,
+        "reapi_allowlist.prefixes.x_to_prefix__mutmut_3": 0.00957833172287792,
+        "reapi_allowlist.prefixes.x_to_prefix__mutmut_4": 0.00957833172287792
+    }
+}
