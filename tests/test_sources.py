@@ -1,3 +1,6 @@
+import asyncio
+import time
+
 import aiohttp
 import pytest
 from aiohttp import web
@@ -280,3 +283,138 @@ async def test_resolve_hosts_dedupes_across_families():
 @pytest.mark.asyncio
 async def test_resolve_hosts_returns_empty_when_both_families_fail():
     assert await resolve_hosts(_FakeResolver({}), "svc") == []
+
+
+# --- the timeout, which nothing asserted -----------------------------------
+
+async def _hanging_handler(request):
+    await asyncio.sleep(30)
+    return web.json_response(READSB_BODY)
+
+
+async def test_fetch_source_gives_up_on_a_hanging_server(aiohttp_server):
+    """A source that accepts the connection and then never answers.
+
+    Without a timeout the reconcile loop blocks here forever: no further
+    cycles, no writes, and seconds_since_success climbing with no clue why.
+    The controller's own interval offers no protection, because the await
+    never returns.
+    """
+    server = await make_server(aiohttp_server, _hanging_handler)
+    url = f"http://{server.host}:{server.port}/clients.json"
+
+    started = time.monotonic()
+    async with aiohttp.ClientSession() as session:
+        result = await fetch_source(session, "ingest-1", url,
+                                    parse_readsb_clients, timeout=0.3)
+    elapsed = time.monotonic() - started
+
+    assert result.ok is False
+    assert result.prefixes == set()
+    assert elapsed < 5, f"took {elapsed:.1f}s -- no timeout was applied"
+
+
+async def test_fetch_source_honours_the_timeout_it_is_given(aiohttp_server):
+    # A longer timeout must actually wait longer, so the value is used rather
+    # than some fixed default.
+    server = await make_server(aiohttp_server, _hanging_handler)
+    url = f"http://{server.host}:{server.port}/clients.json"
+
+    async with aiohttp.ClientSession() as session:
+        short = time.monotonic()
+        await fetch_source(session, "s", url, parse_readsb_clients, timeout=0.2)
+        short = time.monotonic() - short
+
+        longer = time.monotonic()
+        await fetch_source(session, "s", url, parse_readsb_clients, timeout=1.0)
+        longer = time.monotonic() - longer
+
+    assert longer > short * 2, f"short={short:.2f}s longer={longer:.2f}s"
+
+
+# --- mlat discovery by DNS --------------------------------------------------
+
+async def test_gather_sources_discovers_mlat_hosts_by_dns(aiohttp_server, monkeypatch):
+    """--mlat-dns exists so a shard added later is not missed silently."""
+    server = await make_server(aiohttp_server, _mlat_handler)
+
+    async def fake_resolve(resolver, dns_name):
+        return [] if "ingest" in dns_name else [f"{server.host}:{server.port}"]
+
+    monkeypatch.setattr("reapi_allowlist.sources.resolve_hosts", fake_resolve)
+    async with aiohttp.ClientSession() as session:
+        results = await gather_sources(
+            session, resolver=None,
+            ingest_dns="ingest-none", ingest_port=None,
+            mlat_hosts=[], mlat_port=None, mlat_dns="mlat-headless",
+        )
+
+    mlat = [r for r in results if r.name.startswith("mlat:")]
+    assert [r.ok for r in mlat] == [True]
+    assert mlat[0].prefixes == {"198.51.100.20/32"}
+
+
+async def test_mlat_dns_and_explicit_hosts_combine_without_duplicates(
+    aiohttp_server, monkeypatch
+):
+    server = await make_server(aiohttp_server, _mlat_handler)
+    host = f"{server.host}:{server.port}"
+
+    async def fake_resolve(resolver, dns_name):
+        return [] if "ingest" in dns_name else [host]
+
+    monkeypatch.setattr("reapi_allowlist.sources.resolve_hosts", fake_resolve)
+    async with aiohttp.ClientSession() as session:
+        results = await gather_sources(
+            session, resolver=None,
+            ingest_dns="ingest-none", ingest_port=None,
+            mlat_hosts=[host], mlat_port=None, mlat_dns="mlat-headless",
+        )
+
+    # The same host named twice must be polled once, not counted twice.
+    assert len([r for r in results if r.name.startswith("mlat:")]) == 1
+
+
+async def test_a_mlat_dns_name_that_resolves_to_nothing_is_a_failed_source(monkeypatch):
+    """Otherwise all_sources_ok stays True and the additive-only rail never engages.
+
+    Same reasoning as the ingest side: a name that resolves to nothing is a
+    source that failed, not the absence of a source.
+    """
+    async def fake_resolve(resolver, dns_name):
+        return []
+
+    monkeypatch.setattr("reapi_allowlist.sources.resolve_hosts", fake_resolve)
+    async with aiohttp.ClientSession() as session:
+        results = await gather_sources(
+            session, resolver=None,
+            ingest_dns="ingest-none", ingest_port=None,
+            mlat_hosts=[], mlat_port=None, mlat_dns="mlat-none",
+        )
+
+    assert any(r.name == "mlat-dns:mlat-none" and not r.ok for r in results)
+    assert all(not r.ok for r in results)
+
+
+async def test_no_mlat_dns_means_no_synthetic_mlat_source(monkeypatch):
+    # With --mlat-dns unset there is nothing to fail, so no phantom source
+    # should appear and drag all_sources_ok down.
+    async def fake_resolve(resolver, dns_name):
+        return []
+
+    monkeypatch.setattr("reapi_allowlist.sources.resolve_hosts", fake_resolve)
+    async with aiohttp.ClientSession() as session:
+        results = await gather_sources(
+            session, resolver=None,
+            ingest_dns="ingest-none", ingest_port=None,
+            mlat_hosts=[], mlat_port=None, mlat_dns=None,
+        )
+
+    assert not any(r.name.startswith("mlat-dns:") for r in results)
+
+
+# --- _url ------------------------------------------------------------------
+
+def test_url_omits_the_port_when_there_is_none():
+    assert _url("example", None) == "http://example/clients.json"
+    assert _url("example", 150) == "http://example:150/clients.json"

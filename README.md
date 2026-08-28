@@ -122,9 +122,11 @@ that mutmut caches on source hash, so changing only a test does not re-run
 anything; delete `mutants/` to force a clean pass.
 
 32 mutants have no covering test, all of them in `main()` — constructor wiring
-whose only test would assert that constructors get called. 170 survive
-elsewhere, concentrated in `sources.py`, where nothing asserts a fetch timeout
-is applied: a hung source would stall a reconcile.
+whose only test would assert that constructors get called. 148 survive
+elsewhere. What remains is mostly log-message text, default constants, and one
+verified equivalent mutant: the `startswith("[")` guard in `_bracket_if_ipv6`
+is redundant with the `IPv6Address` parse below it, so removing it changes no
+answer.
 
 ## More
 
