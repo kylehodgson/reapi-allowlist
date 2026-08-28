@@ -41,7 +41,7 @@ def build_emitter(args):
     return CGCCEmitter(args.name, args.namespace)
 
 
-async def serve_metrics(metrics: Metrics, port: int) -> None:
+async def serve_metrics(metrics: Metrics, port: int) -> web.AppRunner:
     async def handler(_request):
         return web.Response(text=metrics.render(time.time()),
                             content_type="text/plain")
@@ -51,6 +51,35 @@ async def serve_metrics(metrics: Metrics, port: int) -> None:
     runner = web.AppRunner(app)
     await runner.setup()
     await web.TCPSite(runner, "0.0.0.0", port).start()
+    return runner
+
+
+async def run(args, *, k8s, session, resolver, emitter, feeders, metrics,
+              cycles=None, sleep=asyncio.sleep) -> None:
+    """Poll and reconcile until stopped. `cycles` bounds the loop for tests.
+
+    Seeding happens on the first cycle only. Re-seeding every cycle would
+    re-stamp every persisted prefix as just-seen, and decay could never evict
+    anything.
+    """
+    seed_existing = True
+    completed = 0
+    while cycles is None or completed < cycles:
+        try:
+            sources = await gather_sources(
+                session, resolver,
+                ingest_dns=args.ingest_dns, ingest_port=args.ingest_port,
+                mlat_hosts=args.mlat_host, mlat_port=args.mlat_port,
+                mlat_dns=args.mlat_dns,
+            )
+            await reconcile(sources=sources, feeders=feeders, emitter=emitter,
+                            k8s=k8s, metrics=metrics, now=time.time(),
+                            seed_existing=seed_existing)
+            seed_existing = False
+        except Exception:
+            logging.exception("reconcile failed")
+        completed += 1
+        await sleep(args.interval)
 
 
 async def main() -> None:
@@ -65,23 +94,9 @@ async def main() -> None:
     await serve_metrics(metrics, args.metrics_port)
 
     async with client.ApiClient() as api_client, aiohttp.ClientSession() as session:
-        k8s = K8sClient(client.CustomObjectsApi(api_client))
-        seed_existing = True
-        while True:
-            try:
-                sources = await gather_sources(
-                    session, resolver,
-                    ingest_dns=args.ingest_dns, ingest_port=args.ingest_port,
-                    mlat_hosts=args.mlat_host, mlat_port=args.mlat_port,
-                    mlat_dns=args.mlat_dns,
-                )
-                await reconcile(sources=sources, feeders=feeders, emitter=emitter,
-                                k8s=k8s, metrics=metrics, now=time.time(),
-                                seed_existing=seed_existing)
-                seed_existing = False
-            except Exception:
-                logging.exception("reconcile failed")
-            await asyncio.sleep(args.interval)
+        await run(args, k8s=K8sClient(client.CustomObjectsApi(api_client)),
+                  session=session, resolver=resolver, emitter=emitter,
+                  feeders=feeders, metrics=metrics)
 
 
 if __name__ == "__main__":

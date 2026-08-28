@@ -1,6 +1,0 @@
-{
-  "alice": {"source_ip": "198.51.100.20", "user": "alice", "peer_count": 12},
-  "bob":   {"source_ip": "2001:db8::2",   "user": "bob",   "peer_count": 3},
-  "carol": {"user": "carol", "peer_count": 0},
-  "dave":  {"source_ip": "nonsense",      "user": "dave",  "peer_count": 1}
-}
